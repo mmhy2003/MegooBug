@@ -128,6 +128,24 @@ export default function SettingsPage() {
     setSmtpSaving(false);
   }
 
+  const [smtpTesting, setSmtpTesting] = useState(false);
+
+  async function handleSmtpTest() {
+    setSmtpTesting(true);
+    setSmtpMsg("");
+    try {
+      const result = await api.post<{ ok: boolean; message?: string; error?: string }>("/api/v1/settings/smtp/test");
+      if (result.ok) {
+        setSmtpMsg(result.message || "Test email sent!");
+      } else {
+        setSmtpMsg(result.error || "SMTP test failed");
+      }
+    } catch {
+      setSmtpMsg("Failed to send test email");
+    }
+    setSmtpTesting(false);
+  }
+
   async function loadGeneral() {
     try {
       const data = await api.get<{ key: string; value: Record<string, string> }>("/api/v1/settings/general");
@@ -317,8 +335,13 @@ export default function SettingsPage() {
             </div>
           </div>
           <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
-            <button className="btn btn-secondary" id="smtp-test-btn">
-              Send Test Email
+            <button
+              className="btn btn-secondary"
+              id="smtp-test-btn"
+              onClick={handleSmtpTest}
+              disabled={smtpTesting}
+            >
+              {smtpTesting ? "Sending..." : "Send Test Email"}
             </button>
             <button
               className="btn btn-primary"

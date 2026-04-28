@@ -19,6 +19,12 @@ from app.models.event import Event
 from app.models.notification import Notification, NotificationType
 from app.logging import get_logger
 
+try:
+    from app.tasks.event_tasks import index_issue_to_meilisearch, index_event_to_meilisearch
+    _HAS_TASKS = True
+except Exception:
+    _HAS_TASKS = False
+
 logger = get_logger("services.ingest")
 
 # Regex to extract DSN public key from X-Sentry-Auth header
@@ -294,6 +300,32 @@ async def process_event(
             db, project, issue,
             NotificationType.NEW_ISSUE if is_new else NotificationType.REGRESSION,
         )
+
+    # Index in Meilisearch via Celery
+    if _HAS_TASKS:
+        try:
+            index_issue_to_meilisearch.delay({
+                "id": str(issue.id),
+                "title": issue.title,
+                "fingerprint": issue.fingerprint,
+                "status": issue.status.value,
+                "level": issue.level.value,
+                "project_id": str(issue.project_id),
+                "event_count": issue.event_count,
+                "first_seen": issue.first_seen.isoformat() if issue.first_seen else "",
+                "last_seen": issue.last_seen.isoformat() if issue.last_seen else "",
+                "metadata": issue.metadata_ or {},
+            })
+            index_event_to_meilisearch.delay({
+                "id": str(event.id),
+                "event_id": event.event_id,
+                "issue_id": str(event.issue_id),
+                "project_id": str(event.project_id),
+                "timestamp": event.timestamp.isoformat() if event.timestamp else "",
+                "data": event_data,
+            })
+        except Exception as e:
+            logger.warning("Failed to dispatch indexing tasks: %s", e)
 
     return issue, event
 

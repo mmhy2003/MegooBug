@@ -156,6 +156,34 @@ def _configure_indexes(client):
     client.index("issues").update_sortable_attributes(["last_seen", "event_count"])
     client.index("events").update_filterable_attributes(["project_id", "issue_id"])
     client.index("events").update_sortable_attributes(["timestamp"])
+    client.index("projects").update_sortable_attributes(["created_at"])
+
+
+@celery_app.task(name="index_project_to_meilisearch")
+def index_project_to_meilisearch(project_data: dict):
+    """Index a project in Meilisearch for full-text search."""
+    try:
+        import meilisearch
+        from app.config import settings
+
+        client = meilisearch.Client(
+            settings.MEILISEARCH_URL,
+            settings.MEILISEARCH_MASTER_KEY,
+        )
+
+        index = client.index("projects")
+        doc = {
+            "id": str(project_data["id"]),
+            "name": project_data.get("name", ""),
+            "slug": project_data.get("slug", ""),
+            "platform": project_data.get("platform", ""),
+            "created_at": project_data.get("created_at", ""),
+        }
+        index.add_documents([doc], primary_key="id")
+        logger.debug("Indexed project %s in Meilisearch", doc["id"])
+
+    except Exception as e:
+        logger.error("Failed to index project in Meilisearch: %s", e)
 
 
 def _extract_searchable_text(event_data: dict) -> str:

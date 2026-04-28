@@ -165,6 +165,65 @@ async def upsert_setting(
     return {"key": setting.key, "value": setting.value}
 
 
+@router.get("/settings")
+async def list_settings(
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all settings."""
+    result = await db.execute(select(Setting).order_by(Setting.key))
+    settings_list = result.scalars().all()
+    return {
+        "settings": [
+            {"key": s.key, "value": s.value, "updated_at": s.updated_at.isoformat()}
+            for s in settings_list
+        ]
+    }
+
+
+@router.post("/settings/smtp/test")
+async def test_smtp(
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send a test email using the saved SMTP settings."""
+    import smtplib
+    from email.mime.text import MIMEText
+
+    # Load SMTP settings
+    result = await db.execute(select(Setting).where(Setting.key == "smtp"))
+    setting = result.scalar_one_or_none()
+
+    if setting is None or not setting.value.get("host"):
+        return {"ok": False, "error": "SMTP not configured. Save SMTP settings first."}
+
+    cfg = setting.value
+    try:
+        msg = MIMEText(
+            "This is a test email from MegooBug.\n\n"
+            "If you received this, your SMTP settings are configured correctly.",
+            "plain",
+        )
+        msg["Subject"] = "MegooBug — SMTP Test"
+        msg["From"] = cfg.get("from_email", "noreply@megoobug.local")
+        msg["To"] = current_user.email
+
+        port = int(cfg.get("port", 587))
+        with smtplib.SMTP(cfg["host"], port, timeout=10) as server:
+            if port == 587:
+                server.starttls()
+            if cfg.get("username") and cfg.get("password"):
+                server.login(cfg["username"], cfg["password"])
+            server.sendmail(msg["From"], [current_user.email], msg.as_string())
+
+        logger.info("Test email sent to %s", current_user.email)
+        return {"ok": True, "message": f"Test email sent to {current_user.email}"}
+
+    except Exception as e:
+        logger.error("SMTP test failed: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
 # ── Search ──
 
 

@@ -252,8 +252,8 @@ Running `make` (with no arguments) prints all available commands.
 └─────────────────────────────────────────────────┘
 ```
 
-- **Left Sidebar Navbar** — Collapsible (icon-only mode). Contains: logo, Dashboard, Projects, Users (admin only), Settings, theme toggle, user avatar/logout. ✅ Fetches live user from `GET /users/me`; functional logout via `POST /auth/logout`.
-- **Header Bar** — Global search, notification bell (ready for Phase 4), user avatar initial from live user data.
+- **Left Sidebar Navbar** — Collapsible (icon-only mode). Contains: logo, Dashboard, Projects, Users (admin only), Settings, user avatar/logout. ✅ Fetches live user from `GET /users/me`; functional logout via `POST /auth/logout`.
+- **Header Bar** — Global search (⌘K), theme toggle (light/dark/system), notification bell with live badge, user avatar initial from live user data.
 - **Auth Guard** — Dashboard layout fetches current user on mount; redirects to `/login` on 401. All dashboard pages are protected.
 - **Mobile** — Navbar becomes a hamburger drawer overlay.
 
@@ -303,8 +303,8 @@ Tab-based layout with active tab highlighting:
 
 | Tab | Contents | Status |
 |-----|----------|--------|
-| **General** | Instance name, URL fields | UI ready |
-| **Email / SMTP** | SMTP host, port, username, password, from email, test button, save button | UI ready |
+| **General** | Instance name, URL fields, loaded from `GET /settings/general` | ✅ Functional |
+| **Email / SMTP** | SMTP host, port, username, password, from email. Save via `PUT /settings/smtp`, test via `POST /settings/smtp/test` | ✅ Functional |
 | **Profile** | Name + email fields, fetched from `GET /users/me`, saved via `PATCH /users/me` with success/error feedback | ✅ Functional |
 | **API Keys** | Table: name, token prefix (`mgb_...••••`), last used, created, expires, revoke button. **Create Token** modal with name + optional expiry. Raw token shown **once** with copy button + security warning. | ✅ Functional |
 
@@ -719,7 +719,7 @@ api_tokens
 ### 11.2 Theme Switching
 
 - Three modes: **Light**, **Dark**, **System** (follows `prefers-color-scheme`).
-- Toggle in sidebar footer.
+- Toggle in header bar (between search and notification bell). Also shown on auth pages (login, signup, register).
 - Stored in `localStorage` and cookie (SSR hydration).
 - Smooth CSS transition on switch (`transition: background-color 0.3s, color 0.3s`).
 

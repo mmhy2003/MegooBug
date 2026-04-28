@@ -16,6 +16,7 @@ from app.schemas.project import (
     ProjectMemberAdd, ProjectMemberResponse,
 )
 from app.logging import get_logger
+from app.tasks.event_tasks import index_project_to_meilisearch
 
 logger = get_logger("api.projects")
 
@@ -78,6 +79,16 @@ async def create_project(
     db.add(member)
 
     logger.info("Project created: %s (slug=%s) by %s", project.name, project.slug, current_user.email)
+
+    # Index in Meilisearch
+    index_project_to_meilisearch.delay({
+        "id": str(project.id),
+        "name": project.name,
+        "slug": project.slug,
+        "platform": project.platform or "",
+        "created_at": project.created_at.isoformat() if project.created_at else "",
+    })
+
     return project
 
 
@@ -119,6 +130,16 @@ async def update_project(
 
     await db.flush()
     await db.refresh(project)
+
+    # Re-index in Meilisearch
+    index_project_to_meilisearch.delay({
+        "id": str(project.id),
+        "name": project.name,
+        "slug": project.slug,
+        "platform": project.platform or "",
+        "created_at": project.created_at.isoformat() if project.created_at else "",
+    })
+
     return project
 
 
