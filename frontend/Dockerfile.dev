@@ -1,13 +1,23 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
+# Tooling needed by some native node modules on alpine + watch mode
+RUN apk add --no-cache libc6-compat
+
+ENV NODE_ENV=development \
+    NEXT_TELEMETRY_DISABLED=1 \
+    # Enable polling for reliable file-watching across bind mounts on
+    # Windows / macOS / WSL where inotify events can be flaky.
+    WATCHPACK_POLLING=true \
+    CHOKIDAR_USEPOLLING=true
+
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm \
+    if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; \
+    else npm install --no-audit --no-fund; fi
 
 COPY . .
-
-ENV NEXT_TELEMETRY_DISABLED=1
 
 EXPOSE 3000
 
