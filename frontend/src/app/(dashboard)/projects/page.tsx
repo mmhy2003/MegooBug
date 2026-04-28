@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FolderKanban, Plus, Loader2 } from "lucide-react";
+import { FolderKanban, Plus, Loader2, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { CreateProjectModal } from "@/components/create-project-modal";
 
@@ -14,6 +14,7 @@ interface Project {
   platform: string | null;
   dsn_public_key: string;
   created_at: string;
+  unresolved_count: number;
 }
 
 export default function ProjectsPage() {
@@ -99,7 +100,29 @@ export default function ProjectsPage() {
               key={project.id}
               style={{ textDecoration: "none", color: "inherit" }}
             >
-              <div className="card" style={{ cursor: "pointer" }}>
+              <div className="card" style={{ cursor: "pointer", position: "relative" }}>
+                {project.unresolved_count > 0 && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "0.75rem",
+                      right: "0.75rem",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.35rem",
+                      background: "rgba(239, 68, 68, 0.12)",
+                      color: "#ef4444",
+                      padding: "0.25rem 0.6rem",
+                      borderRadius: "999px",
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      lineHeight: 1,
+                    }}
+                  >
+                    <AlertCircle size={13} />
+                    {project.unresolved_count}
+                  </div>
+                )}
                 <div
                   style={{
                     display: "flex",

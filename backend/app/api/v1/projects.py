@@ -18,6 +18,8 @@ from app.schemas.project import (
 from app.logging import get_logger
 from app.tasks.event_tasks import index_project_to_meilisearch
 
+from app.models.issue import Issue, IssueStatus
+
 logger = get_logger("api.projects")
 
 router = APIRouter()
@@ -28,16 +30,43 @@ def _generate_dsn_key() -> str:
     return secrets.token_hex(16)
 
 
-@router.get("", response_model=list[ProjectResponse])
+@router.get("", response_model=list[dict])
 async def list_projects(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """List all projects."""
-    result = await db.execute(
-        select(Project).order_by(Project.created_at.desc())
+    """List all projects with unresolved issue counts."""
+    # Subquery for unresolved issue count per project
+    unresolved_subq = (
+        select(func.count(Issue.id))
+        .where(
+            Issue.project_id == Project.id,
+            Issue.status == IssueStatus.UNRESOLVED,
+        )
+        .correlate(Project)
+        .scalar_subquery()
+        .label("unresolved_count")
     )
-    return result.scalars().all()
+
+    result = await db.execute(
+        select(Project, unresolved_subq).order_by(Project.created_at.desc())
+    )
+
+    projects = []
+    for project, unresolved_count in result.all():
+        projects.append({
+            "id": str(project.id),
+            "project_number": project.project_number,
+            "name": project.name,
+            "slug": project.slug,
+            "platform": project.platform,
+            "dsn_public_key": project.dsn_public_key,
+            "created_by": str(project.created_by),
+            "created_at": project.created_at.isoformat() if project.created_at else None,
+            "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+            "unresolved_count": unresolved_count or 0,
+        })
+    return projects
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
