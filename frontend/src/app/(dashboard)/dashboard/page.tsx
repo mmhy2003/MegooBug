@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   FolderKanban,
@@ -19,36 +20,76 @@ interface DashboardStats {
 
 interface RecentIssue {
   id: string;
-  title: string;
   project_id: string;
+  title: string;
+  status: string;
   level: string;
   event_count: number;
+  first_seen: string;
   last_seen: string;
-  status: string;
+}
+
+interface IssueList {
+  items: RecentIssue[];
+  total: number;
+}
+
+interface Project {
+  id: string;
+  slug: string;
+  name: string;
 }
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [issues, setIssues] = useState<RecentIssue[]>([]);
+  const [projects, setProjects] = useState<Map<string, Project>>(new Map());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const [statsData, issuesData] = await Promise.allSettled([
+        const [statsData, projectsData] = await Promise.allSettled([
           api.get<DashboardStats>("/api/v1/stats/dashboard"),
-          api.get<{ items: RecentIssue[] }>("/api/v1/projects/_/issues"),
+          api.get<Project[]>("/api/v1/projects"),
         ]);
 
         if (statsData.status === "fulfilled") {
           setStats(statsData.value);
         }
-        // Issues endpoint might fail if no projects exist yet — that's fine
-        if (issuesData.status === "fulfilled") {
-          setIssues(issuesData.value.items || []);
+
+        if (projectsData.status === "fulfilled") {
+          const projMap = new Map<string, Project>();
+          projectsData.value.forEach((p) => projMap.set(p.id, p));
+          setProjects(projMap);
+
+          // Load recent issues from first project, or all
+          if (projectsData.value.length > 0) {
+            try {
+              // Get issues across all projects by trying each
+              const allIssues: RecentIssue[] = [];
+              for (const proj of projectsData.value.slice(0, 5)) {
+                try {
+                  const issData = await api.get<IssueList>(
+                    `/api/v1/projects/${proj.slug}/issues?limit=10&status=unresolved`
+                  );
+                  allIssues.push(...issData.items);
+                } catch {
+                  // Project might have no issues
+                }
+              }
+              // Sort by last_seen and take top 10
+              allIssues.sort(
+                (a, b) => new Date(b.last_seen).getTime() - new Date(a.last_seen).getTime()
+              );
+              setIssues(allIssues.slice(0, 10));
+            } catch {
+              // Ignore
+            }
+          }
         }
       } catch {
-        // Ignore — we show empty state
+        // Ignore — show empty state
       } finally {
         setLoading(false);
       }
@@ -61,7 +102,7 @@ export default function DashboardPage() {
     const diff = Date.now() - new Date(isoString).getTime();
     const minutes = Math.floor(diff / 60000);
     if (minutes < 1) return "just now";
-    if (minutes < 60) return `${minutes} min ago`;
+    if (minutes < 60) return `${minutes}m ago`;
     const hours = Math.floor(minutes / 60);
     if (hours < 24) return `${hours}h ago`;
     const days = Math.floor(hours / 24);
@@ -81,30 +122,44 @@ export default function DashboardPage() {
     }
   }
 
+  function getProjectSlug(projectId: string): string {
+    const p = projects.get(projectId);
+    return p?.slug || "";
+  }
+
+  function getProjectName(projectId: string): string {
+    const p = projects.get(projectId);
+    return p?.name || p?.slug || "—";
+  }
+
   const statCards = [
     {
       label: "Total Projects",
       value: stats?.total_projects ?? 0,
       icon: FolderKanban,
       accent: false,
+      href: "/projects",
     },
     {
       label: "Errors (24h)",
       value: stats?.errors_24h ?? 0,
       icon: AlertTriangle,
       accent: true,
+      href: null,
     },
     {
       label: "Unresolved Issues",
       value: stats?.unresolved_issues ?? 0,
       icon: Activity,
       accent: true,
+      href: null,
     },
     {
       label: "Active Users",
       value: stats?.active_users ?? 0,
       icon: Users,
       accent: false,
+      href: "/users",
     },
   ];
 
@@ -126,7 +181,7 @@ export default function DashboardPage() {
       <div className="stat-grid">
         {statCards.map((stat) => {
           const Icon = stat.icon;
-          return (
+          const cardContent = (
             <div className="stat-card" key={stat.label}>
               <div
                 style={{
@@ -156,17 +211,32 @@ export default function DashboardPage() {
               </div>
             </div>
           );
+
+          if (stat.href) {
+            return (
+              <Link
+                key={stat.label}
+                href={stat.href}
+                style={{ textDecoration: "none", color: "inherit" }}
+              >
+                {cardContent}
+              </Link>
+            );
+          }
+          return <div key={stat.label}>{cardContent}</div>;
         })}
       </div>
 
       {/* Recent Issues */}
       <div style={{ marginTop: "1.5rem" }}>
         <h2 style={{ fontSize: "1.125rem", marginBottom: "1rem" }}>
-          Recent Issues
+          Recent Unresolved Issues
         </h2>
         {issues.length === 0 ? (
-          <div className="card" style={{ textAlign: "center", padding: "2rem" }}>
-            <p className="text-muted">No issues yet. Connect a Sentry SDK to start tracking errors.</p>
+          <div className="card empty-state">
+            <AlertTriangle size={48} className="empty-state-icon" />
+            <h3 style={{ marginBottom: "0.5rem" }}>No issues yet</h3>
+            <p className="text-muted">Connect a Sentry SDK to start tracking errors.</p>
           </div>
         ) : (
           <div className="table-wrapper">
@@ -174,6 +244,7 @@ export default function DashboardPage() {
               <thead>
                 <tr>
                   <th>Issue</th>
+                  <th>Project</th>
                   <th>Level</th>
                   <th>Events</th>
                   <th>Last Seen</th>
@@ -183,9 +254,24 @@ export default function DashboardPage() {
                 {issues.map((issue) => (
                   <tr key={issue.id} style={{ cursor: "pointer" }}>
                     <td>
-                      <span className="text-mono" style={{ fontSize: "0.8125rem" }}>
-                        {issue.title}
-                      </span>
+                      <Link
+                        href={`/projects/${getProjectSlug(issue.project_id)}/issues/${issue.id}`}
+                        style={{ color: "var(--text-primary)", textDecoration: "none" }}
+                      >
+                        <span className="text-mono" style={{ fontSize: "0.8125rem" }}>
+                          {issue.title}
+                        </span>
+                      </Link>
+                    </td>
+                    <td>
+                      <Link
+                        href={`/projects/${getProjectSlug(issue.project_id)}`}
+                        style={{ textDecoration: "none" }}
+                      >
+                        <span className="badge badge-info">
+                          {getProjectName(issue.project_id)}
+                        </span>
+                      </Link>
                     </td>
                     <td>
                       <span className={getLevelBadgeClass(issue.level)}>

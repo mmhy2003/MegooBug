@@ -1,16 +1,45 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
+import { api } from "@/lib/api";
+
+interface CurrentUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadUser() {
+      try {
+        const userData = await api.get<CurrentUser>("/api/v1/users/me");
+        setUser(userData);
+      } catch {
+        // Auth failed → redirect to login
+        router.push("/login");
+        return;
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadUser();
+  }, [router]);
 
   // Close mobile menu on resize
   useEffect(() => {
@@ -23,6 +52,28 @@ export default function DashboardLayout({
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  if (loading) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "100vh",
+          background: "var(--bg-primary)",
+        }}
+      >
+        <Loader2
+          size={36}
+          className="spin"
+          style={{ color: "var(--accent-primary)" }}
+        />
+      </div>
+    );
+  }
+
+  if (!user) return null;
+
   return (
     <div className="app-layout scanlines">
       <Sidebar
@@ -30,6 +81,8 @@ export default function DashboardLayout({
         onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
         mobileOpen={mobileOpen}
         onMobileClose={() => setMobileOpen(false)}
+        userRole={user.role}
+        userName={user.name}
       />
 
       <div
@@ -38,6 +91,7 @@ export default function DashboardLayout({
         <Header
           sidebarCollapsed={sidebarCollapsed}
           onMobileMenuOpen={() => setMobileOpen(true)}
+          userName={user.name}
         />
         <main className="app-content">{children}</main>
       </div>

@@ -13,6 +13,11 @@ interface UserItem {
   created_at: string;
 }
 
+interface UserListResponse {
+  users: UserItem[];
+  total: number;
+}
+
 export default function UsersPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,10 +25,10 @@ export default function UsersPage() {
   useEffect(() => {
     async function load() {
       try {
-        const data = await api.get<UserItem[]>("/api/v1/users");
-        setUsers(data);
+        const data = await api.get<UserListResponse>("/api/v1/users");
+        setUsers(data.users);
       } catch {
-        // Ignore — show empty state
+        // Might fail for non-admin users — show empty state
       } finally {
         setLoading(false);
       }
@@ -66,8 +71,8 @@ export default function UsersPage() {
       </div>
 
       {users.length === 0 ? (
-        <div className="card" style={{ textAlign: "center", padding: "3rem" }}>
-          <UsersIcon size={48} style={{ color: "var(--text-tertiary)", marginBottom: "1rem" }} />
+        <div className="card empty-state">
+          <UsersIcon size={48} className="empty-state-icon" />
           <h3 style={{ marginBottom: "0.5rem" }}>No users found</h3>
           <p className="text-muted">Invite team members to start collaborating.</p>
         </div>

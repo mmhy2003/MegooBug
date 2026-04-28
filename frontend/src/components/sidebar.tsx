@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -12,8 +12,10 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  Loader2,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { api } from "@/lib/api";
 
 interface NavItem {
   label: string;
@@ -47,6 +49,8 @@ export function Sidebar({
   userName = "Admin",
 }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const sidebarClasses = [
     "sidebar",
@@ -59,6 +63,16 @@ export function Sidebar({
   const visibleItems = navItems.filter(
     (item) => !item.adminOnly || userRole === "admin"
   );
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    try {
+      await api.post("/api/v1/auth/logout");
+    } catch {
+      // Even if the API call fails, redirect to login
+    }
+    router.push("/login");
+  }
 
   return (
     <>
@@ -150,17 +164,24 @@ export function Sidebar({
             )}
             {!collapsed && (
               <button
-                className="btn-ghost"
                 style={{
                   padding: "0.375rem",
                   background: "none",
                   border: "none",
-                  color: "var(--text-tertiary)",
-                  cursor: "pointer",
+                  color: loggingOut ? "var(--accent-primary)" : "var(--text-tertiary)",
+                  cursor: loggingOut ? "wait" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
                 }}
                 title="Logout"
+                onClick={handleLogout}
+                disabled={loggingOut}
               >
-                <LogOut size={16} />
+                {loggingOut ? (
+                  <Loader2 size={16} className="spin" />
+                ) : (
+                  <LogOut size={16} />
+                )}
               </button>
             )}
           </div>

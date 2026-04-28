@@ -42,7 +42,7 @@ export function Header({
         {/* Notifications */}
         <button className="notification-btn" aria-label="Notifications" id="notification-bell">
           <Bell size={20} />
-          <span className="notification-badge">3</span>
+          {/* Badge will be shown when notification system is implemented */}
         </button>
 
         {/* User avatar */}
