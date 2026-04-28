@@ -45,6 +45,7 @@ class User(Base):
     project_memberships = relationship("ProjectMember", back_populates="user")
     notifications = relationship("Notification", back_populates="user")
     invites_sent = relationship("Invite", back_populates="invited_by_user")
+    api_tokens = relationship("ApiToken", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User {self.email} ({self.role.value})>"

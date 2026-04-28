@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.api.v1 import router as api_v1_router
+from app.api.ingest import router as ingest_router
+from app.api.sentry_compat import router as sentry_compat_router
 from app.database import engine, Base
 from app.logging import setup_logging, get_logger
 
@@ -17,7 +19,7 @@ async def _auto_migrate():
     """Auto-create all database tables on startup."""
     from app.models import (  # noqa: F401
         User, Project, ProjectMember, Issue, Event,
-        Notification, Invite, Setting,
+        Notification, Invite, Setting, ApiToken,
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -74,6 +76,7 @@ app = FastAPI(
     docs_url="/api/docs" if settings.ENVIRONMENT == "development" else None,
     redoc_url="/api/redoc" if settings.ENVIRONMENT == "development" else None,
     lifespan=lifespan,
+    redirect_slashes=False,  # Sentry CLI expects trailing slashes
 )
 
 # CORS
@@ -87,6 +90,8 @@ app.add_middleware(
 
 # Routers
 app.include_router(api_v1_router)
+app.include_router(ingest_router, prefix="/api")       # Sentry ingest: /api/{project_id}/store/
+app.include_router(sentry_compat_router)                # Sentry compat: /api/0/...
 
 
 @app.get("/api/health")
