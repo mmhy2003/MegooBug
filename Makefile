@@ -1,4 +1,44 @@
-.PHONY: dev prod down logs migrate seed test lint clean shell-be shell-fe reindex
+.PHONY: help dev prod down logs migrate seed test lint clean shell-be shell-fe reindex
+
+.DEFAULT_GOAL := help
+
+# ── Help ──
+help:
+	@echo.
+	@echo   MegooBug - Available Commands
+	@echo   =============================
+	@echo.
+	@echo   Development:
+	@echo     make dev          Build and start dev stack (detached)
+	@echo     make prod         Build and start production stack
+	@echo     make down         Stop all containers
+	@echo.
+	@echo   Logs:
+	@echo     make logs         Tail all service logs
+	@echo     make logs-be      Tail backend logs only
+	@echo     make logs-fe      Tail frontend logs only
+	@echo.
+	@echo   Database:
+	@echo     make migrate      Run Alembic migrations
+	@echo     make migration    Create new migration (msg="description")
+	@echo     make seed         Seed admin user
+	@echo.
+	@echo   Search:
+	@echo     make reindex      Full Meilisearch re-index
+	@echo.
+	@echo   Testing:
+	@echo     make test         Run all tests
+	@echo     make test-be      Run backend tests only
+	@echo     make test-fe      Run frontend tests only
+	@echo.
+	@echo   Code Quality:
+	@echo     make lint         Lint backend + frontend
+	@echo.
+	@echo   Utilities:
+	@echo     make shell-be     Shell into backend container
+	@echo     make shell-fe     Shell into frontend container
+	@echo     make clean        Remove all volumes and images
+	@echo.
 
 # ── Development ──
 dev:
