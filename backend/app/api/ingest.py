@@ -3,6 +3,7 @@
 These endpoints accept events from Sentry SDKs and CLI tools.
 Authentication is via DSN public key, not user JWT.
 """
+import gzip
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -20,6 +21,22 @@ from app.logging import get_logger
 logger = get_logger("api.ingest")
 
 router = APIRouter()
+
+
+def _decompress_body(body: bytes, content_encoding: str | None) -> bytes:
+    """Decompress body if gzip/deflate encoded."""
+    if content_encoding in ("gzip", "deflate"):
+        try:
+            return gzip.decompress(body)
+        except Exception as e:
+            logger.warning("Failed to decompress body: %s", e)
+    # Also try auto-detect gzip magic bytes
+    if body[:2] == b"\x1f\x8b":
+        try:
+            return gzip.decompress(body)
+        except Exception:
+            pass
+    return body
 
 
 @router.post("/{project_id}/store/")
@@ -40,10 +57,17 @@ async def store_event(
     if project is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid DSN")
 
-    # Parse body
-    body = await request.body()
+    # Parse body (handle gzip)
+    raw_body = await request.body()
+    content_encoding = request.headers.get("content-encoding")
+    body = _decompress_body(raw_body, content_encoding)
+
     event_data = parse_store_payload(body)
     if not event_data:
+        logger.warning(
+            "Empty store payload (project=%s, raw=%d bytes, decoded=%d bytes)",
+            project.slug, len(raw_body), len(body),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payload")
 
     # Process
@@ -76,12 +100,24 @@ async def store_envelope(
     if project is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid DSN")
 
-    # Parse envelope
-    body = await request.body()
+    # Parse envelope (handle gzip)
+    raw_body = await request.body()
+    content_encoding = request.headers.get("content-encoding")
+    body = _decompress_body(raw_body, content_encoding)
+
+    logger.debug(
+        "Envelope received: project=%s, raw=%d bytes, decoded=%d bytes, encoding=%s",
+        project.slug, len(raw_body), len(body), content_encoding,
+    )
+
     events = parse_envelope_payload(body)
 
     if not events:
         # Envelope may contain non-event items (sessions, etc.) — accept silently
+        logger.debug(
+            "No actionable events in envelope (project=%s, body_preview=%s)",
+            project.slug, body[:200].decode("utf-8", errors="replace"),
+        )
         return {"id": str(uuid.uuid4().hex)}
 
     # Process each event in the envelope
@@ -96,3 +132,4 @@ async def store_envelope(
     )
 
     return {"id": last_event_id or str(uuid.uuid4().hex)}
+
