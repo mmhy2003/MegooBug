@@ -13,6 +13,7 @@ from app.database import get_db
 from app.services.ingest import (
     validate_dsn,
     parse_store_payload,
+    parse_envelope_header,
     parse_envelope_payload,
     process_event,
 )
@@ -90,20 +91,23 @@ async def store_envelope(
     """Sentry envelope endpoint. Accepts newline-delimited envelope format.
 
     Used by modern Sentry SDKs.
-    Auth via X-Sentry-Auth header or ?sentry_key= query param.
+    Auth via X-Sentry-Auth header, ?sentry_key= query param, or DSN in envelope header.
     """
-    # Validate DSN
-    auth_header = request.headers.get("x-sentry-auth", "")
-    query_params = dict(request.query_params)
-    project = await validate_dsn(auth_header, query_params, db)
-
-    if project is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid DSN")
-
-    # Parse envelope (handle gzip)
+    # Parse body first (handle gzip) so we can read the envelope header for DSN auth
     raw_body = await request.body()
     content_encoding = request.headers.get("content-encoding")
     body = _decompress_body(raw_body, content_encoding)
+
+    # Parse envelope header for potential DSN auth fallback
+    envelope_header, _ = parse_envelope_header(body)
+
+    # Validate DSN (try header, query params, then envelope header DSN)
+    auth_header = request.headers.get("x-sentry-auth", "")
+    query_params = dict(request.query_params)
+    project = await validate_dsn(auth_header, query_params, db, envelope_header=envelope_header)
+
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid DSN")
 
     logger.debug(
         "Envelope received: project=%s, raw=%d bytes, decoded=%d bytes, encoding=%s",

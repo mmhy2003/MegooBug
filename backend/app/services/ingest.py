@@ -36,8 +36,9 @@ async def validate_dsn(
     auth_header: str | None,
     query_params: dict,
     db: AsyncSession,
+    envelope_header: dict | None = None,
 ) -> Project | None:
-    """Validate DSN auth from X-Sentry-Auth header or query params.
+    """Validate DSN auth from X-Sentry-Auth header, query params, or envelope header.
 
     Returns the Project if valid, None otherwise.
     """
@@ -52,6 +53,20 @@ async def validate_dsn(
     # Fallback: query param ?sentry_key=...
     if dsn_key is None:
         dsn_key = query_params.get("sentry_key")
+
+    # Fallback: DSN in envelope header
+    if dsn_key is None and envelope_header:
+        dsn_str = envelope_header.get("dsn", "")
+        if dsn_str:
+            # DSN format: {PROTOCOL}://{PUBLIC_KEY}:{SECRET_KEY}@{HOST}/{PROJECT_ID}
+            # Extract public key (the user part of the URL)
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(dsn_str)
+                if parsed.username:
+                    dsn_key = parsed.username
+            except Exception:
+                pass
 
     if dsn_key is None:
         logger.warning("No DSN key found in request")
@@ -76,49 +91,111 @@ def parse_store_payload(body: bytes) -> dict:
         return {}
 
 
-def parse_envelope_payload(body: bytes) -> list[dict]:
-    """Parse a Sentry envelope (newline-delimited JSON items).
+def parse_envelope_header(body: bytes) -> tuple[dict, int]:
+    """Parse the envelope header (first line) and return (header_dict, offset after header).
 
-    Envelope format:
-        {header}\n
-        {item_header}\n
-        {item_payload}\n
+    Returns ({}, 0) if parsing fails.
+    """
+    newline_pos = body.find(b"\n")
+    if newline_pos == -1:
+        # Entire body is the header (empty envelope)
+        try:
+            return json.loads(body), len(body)
+        except (json.JSONDecodeError, ValueError):
+            return {}, 0
+
+    header_line = body[:newline_pos]
+    try:
+        return json.loads(header_line), newline_pos + 1
+    except (json.JSONDecodeError, ValueError):
+        return {}, 0
+
+
+def parse_envelope_payload(body: bytes) -> list[dict]:
+    """Parse a Sentry envelope with proper length-prefixed item support.
+
+    Envelope format (per Sentry spec):
+        {envelope_header}\\n
+        {item_header}\\n
+        {item_payload}\\n   (or length-prefixed payload)
+        {item_header}\\n
+        {item_payload}\\n
         ...
+
+    Items have a `type` header ("event", "error", "transaction", "session", etc.)
+    and an optional `length` header. When `length` is present, the payload is
+    exactly that many bytes (not newline-delimited).
 
     Returns list of event payloads found in the envelope.
     """
     events = []
     try:
-        lines = body.split(b"\n")
-        i = 0
         # Skip envelope header
-        if len(lines) > 0:
-            i = 1
+        _, offset = parse_envelope_header(body)
+        if offset == 0:
+            logger.warning("Failed to parse envelope header")
+            return events
 
-        while i < len(lines):
-            # Item header
-            if i >= len(lines) or not lines[i].strip():
-                i += 1
+        while offset < len(body):
+            # Skip empty lines
+            if body[offset:offset + 1] == b"\n":
+                offset += 1
+                continue
+
+            # ── Item header ──
+            header_end = body.find(b"\n", offset)
+            if header_end == -1:
+                # No more newlines — try to parse remaining as item header (no payload)
+                break
+
+            header_line = body[offset:header_end]
+            offset = header_end + 1
+
+            if not header_line.strip():
                 continue
 
             try:
-                item_header = json.loads(lines[i])
+                item_header = json.loads(header_line)
             except (json.JSONDecodeError, ValueError):
-                i += 1
+                logger.debug("Skipping unparseable item header: %s", header_line[:100])
                 continue
 
             item_type = item_header.get("type", "")
-            i += 1
+            item_length = item_header.get("length")
 
-            # Item payload
-            if i < len(lines) and lines[i].strip():
+            # ── Item payload ──
+            if item_length is not None and isinstance(item_length, int) and item_length > 0:
+                # Length-prefixed payload
+                payload_bytes = body[offset:offset + item_length]
+                offset += item_length
+                # Skip trailing newline after length-prefixed payload
+                if offset < len(body) and body[offset:offset + 1] == b"\n":
+                    offset += 1
+            else:
+                # Implicit length — payload goes to next newline
+                payload_end = body.find(b"\n", offset)
+                if payload_end == -1:
+                    payload_bytes = body[offset:]
+                    offset = len(body)
+                else:
+                    payload_bytes = body[offset:payload_end]
+                    offset = payload_end + 1
+
+            if not payload_bytes.strip():
+                continue
+
+            # Only process event-like item types
+            if item_type in ("event", "error", "transaction", "default", ""):
                 try:
-                    payload = json.loads(lines[i])
-                    if item_type in ("event", "error", "transaction", ""):
-                        events.append(payload)
-                except (json.JSONDecodeError, ValueError):
-                    pass
-            i += 1
+                    payload = json.loads(payload_bytes)
+                    events.append(payload)
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.debug(
+                        "Failed to parse %s payload (%d bytes): %s",
+                        item_type or "unknown", len(payload_bytes), e,
+                    )
+            else:
+                logger.debug("Skipping envelope item type: %s", item_type)
 
     except Exception as e:
         logger.error("Failed to parse envelope: %s", e)
