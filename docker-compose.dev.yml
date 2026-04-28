@@ -90,6 +90,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.dev
     env_file: .env
+    environment:
+      WATCHPACK_POLLING: "true"
     volumes:
       - ./frontend:/app
       - /app/node_modules

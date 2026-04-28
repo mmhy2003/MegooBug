@@ -14,7 +14,6 @@ import {
   LogOut,
   Loader2,
 } from "lucide-react";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { api } from "@/lib/api";
 
 interface NavItem {
@@ -117,8 +116,6 @@ export function Sidebar({
 
         {/* Footer */}
         <div className="sidebar-footer">
-          <ThemeToggle />
-
           {/* User info */}
           <div
             style={{

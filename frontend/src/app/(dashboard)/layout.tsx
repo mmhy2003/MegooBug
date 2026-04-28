@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
+import { SearchPalette } from "@/components/search-palette";
 import { api } from "@/lib/api";
 
 interface CurrentUser {
@@ -24,6 +25,7 @@ export default function DashboardLayout({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     async function loadUser() {
@@ -31,7 +33,6 @@ export default function DashboardLayout({
         const userData = await api.get<CurrentUser>("/api/v1/users/me");
         setUser(userData);
       } catch {
-        // Auth failed → redirect to login
         router.push("/login");
         return;
       } finally {
@@ -91,10 +92,14 @@ export default function DashboardLayout({
         <Header
           sidebarCollapsed={sidebarCollapsed}
           onMobileMenuOpen={() => setMobileOpen(true)}
+          onSearchOpen={() => setSearchOpen(true)}
           userName={user.name}
         />
         <main className="app-content">{children}</main>
       </div>
+
+      {/* Global Search Palette (Ctrl+K) */}
+      {searchOpen && <SearchPalette />}
     </div>
   );
 }

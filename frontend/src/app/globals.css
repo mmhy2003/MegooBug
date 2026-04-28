@@ -1345,3 +1345,207 @@ tr:hover td {
   width: 100%;
   box-shadow: var(--shadow-elevated);
 }
+
+/* ── Page Transition ── */
+.app-content {
+  animation: pageEnter 300ms ease;
+}
+
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Enhanced Card Hover ── */
+.card {
+  transition: all var(--transition-normal), transform var(--transition-fast);
+}
+
+.card:hover {
+  transform: translateY(-1px);
+}
+
+/* ── Button micro-animations ── */
+.btn {
+  transition: all var(--transition-fast), transform 100ms ease;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+/* ── Notification dropdown ── */
+.notification-dropdown {
+  animation: slideDown 200ms ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Badge success ── */
+.badge-success {
+  background: rgba(0, 255, 136, 0.1);
+  color: var(--accent-success);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+}
+
+/* ── Responsive: Tablet ── */
+@media (max-width: 1024px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .page-header {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .issue-header {
+    flex-direction: column;
+  }
+
+  .issue-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ── Responsive: Mobile ── */
+@media (max-width: 767px) {
+  :root {
+    --header-height: 56px;
+  }
+
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.25rem; }
+
+  .stat-grid {
+    grid-template-columns: 1fr !important;
+    gap: 0.75rem !important;
+  }
+
+  .header-search {
+    display: none !important;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .page-header .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .card {
+    padding: 1rem;
+  }
+
+  .table-wrapper {
+    margin-left: -1rem;
+    margin-right: -1rem;
+    border-radius: 0;
+  }
+
+  .tabs {
+    gap: 0;
+  }
+
+  .tab {
+    padding: 0.625rem 0.75rem;
+    font-size: 0.8125rem;
+  }
+
+  .modal {
+    margin: 1rem;
+    max-width: calc(100vw - 2rem);
+    padding: 1.25rem;
+  }
+
+  .breadcrumbs {
+    font-size: 0.75rem;
+  }
+
+  .dsn-display {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .dsn-display .copy-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .notification-dropdown {
+    position: fixed !important;
+    top: var(--header-height) !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    max-height: calc(100vh - var(--header-height)) !important;
+    border-radius: 0 !important;
+  }
+
+  .trend-chart {
+    height: 60px;
+  }
+
+  .issue-meta {
+    gap: 0.5rem;
+    font-size: 0.75rem;
+  }
+}
+
+/* ── Responsive: Small Mobile ── */
+@media (max-width: 480px) {
+  .app-content {
+    padding: 0.75rem;
+  }
+
+  .stat-card {
+    padding: 1rem;
+  }
+
+  .confirm-dialog {
+    margin: 1rem;
+    max-width: calc(100vw - 2rem);
+  }
+}
+
+/* ── Print ── */
+@media print {
+  .sidebar, .header, .sidebar-overlay {
+    display: none !important;
+  }
+
+  .app-main {
+    margin-left: 0 !important;
+  }
+
+  .card {
+    box-shadow: none;
+    border: 1px solid #ddd;
+  }
+}

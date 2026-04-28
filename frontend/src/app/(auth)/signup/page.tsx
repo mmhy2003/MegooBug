@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bug, Eye, EyeOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -41,6 +42,9 @@ export default function SignupPage() {
 
   return (
     <div className="auth-layout">
+      <div style={{ position: "fixed", top: "1.25rem", right: "1.25rem", zIndex: 50 }}>
+        <ThemeToggle />
+      </div>
       <div className="auth-card">
         <div className="auth-logo">
           <div

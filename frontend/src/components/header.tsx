@@ -1,16 +1,19 @@
 "use client";
 
-import { Search, Bell, Menu } from "lucide-react";
-
+import { Search, Menu } from "lucide-react";
+import { NotificationBell } from "@/components/notification-bell";
+import { ThemeToggle } from "@/components/theme-toggle";
 interface HeaderProps {
   sidebarCollapsed: boolean;
   onMobileMenuOpen: () => void;
+  onSearchOpen?: () => void;
   userName?: string;
 }
 
 export function Header({
   sidebarCollapsed,
   onMobileMenuOpen,
+  onSearchOpen,
   userName = "Admin",
 }: HeaderProps) {
   return (
@@ -24,8 +27,12 @@ export function Header({
           <Menu size={22} />
         </button>
 
-        {/* Search */}
-        <div className="header-search">
+        {/* Search trigger */}
+        <div
+          className="header-search"
+          onClick={onSearchOpen}
+          style={{ cursor: "pointer" }}
+        >
           <Search size={16} className="header-search-icon" />
           <input
             type="text"
@@ -33,17 +40,20 @@ export function Header({
             placeholder="Search issues, projects..."
             id="global-search"
             aria-label="Global search"
+            readOnly
+            onFocus={onSearchOpen}
+            style={{ cursor: "pointer" }}
           />
           <span className="header-search-shortcut">⌘K</span>
         </div>
       </div>
 
       <div className="header-actions">
+        {/* Theme switcher */}
+        <ThemeToggle />
+
         {/* Notifications */}
-        <button className="notification-btn" aria-label="Notifications" id="notification-bell">
-          <Bell size={20} />
-          {/* Badge will be shown when notification system is implemented */}
-        </button>
+        <NotificationBell />
 
         {/* User avatar */}
         <div className="user-avatar" title={userName}>

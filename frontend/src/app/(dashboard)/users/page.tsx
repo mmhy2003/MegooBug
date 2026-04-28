@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { UserPlus, Loader2, Users as UsersIcon } from "lucide-react";
 import { api } from "@/lib/api";
+import { InviteUserModal } from "@/components/invite-user-modal";
 
 interface UserItem {
   id: string;
@@ -21,20 +22,41 @@ interface UserListResponse {
 export default function UsersPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showInvite, setShowInvite] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const data = await api.get<UserListResponse>("/api/v1/users");
-        setUsers(data.users);
-      } catch {
-        // Might fail for non-admin users — show empty state
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
+    loadUsers();
   }, []);
+
+  async function loadUsers() {
+    try {
+      const data = await api.get<UserListResponse>("/api/v1/users");
+      setUsers(data.users);
+    } catch {
+      // Might fail for non-admin users
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function toggleUserStatus(userId: string) {
+    setUpdatingId(userId);
+    try {
+      const updated = await api.patch<UserItem>(`/api/v1/users/${userId}/status`);
+      setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
+    } catch {}
+    setUpdatingId(null);
+  }
+
+  async function changeUserRole(userId: string, role: string) {
+    setUpdatingId(userId);
+    try {
+      const updated = await api.patch<UserItem>(`/api/v1/users/${userId}/role`, { role });
+      setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
+    } catch {}
+    setUpdatingId(null);
+  }
 
   function getRoleBadge(role: string) {
     switch (role) {
@@ -64,7 +86,11 @@ export default function UsersPage() {
     <div>
       <div className="page-header">
         <h1 className="page-title">Users</h1>
-        <button className="btn btn-primary" id="invite-user-btn">
+        <button
+          className="btn btn-primary"
+          id="invite-user-btn"
+          onClick={() => setShowInvite(true)}
+        >
           <UserPlus size={16} />
           Invite User
         </button>
@@ -102,7 +128,17 @@ export default function UsersPage() {
                   </td>
                   <td className="text-muted">{user.email}</td>
                   <td>
-                    <span className={getRoleBadge(user.role)}>{user.role}</span>
+                    <select
+                      className="input"
+                      style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", width: "auto" }}
+                      value={user.role}
+                      onChange={(e) => changeUserRole(user.id, e.target.value)}
+                      disabled={updatingId === user.id}
+                    >
+                      <option value="admin">admin</option>
+                      <option value="developer">developer</option>
+                      <option value="viewer">viewer</option>
+                    </select>
                   </td>
                   <td>
                     <span className={user.is_active ? "badge badge-success" : "badge badge-warning"}>
@@ -111,8 +147,13 @@ export default function UsersPage() {
                   </td>
                   <td className="text-muted">{formatDate(user.created_at)}</td>
                   <td>
-                    <button className="btn btn-ghost" style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}>
-                      Edit
+                    <button
+                      className="btn btn-ghost"
+                      style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                      onClick={() => toggleUserStatus(user.id)}
+                      disabled={updatingId === user.id}
+                    >
+                      {user.is_active ? "Disable" : "Enable"}
                     </button>
                   </td>
                 </tr>
@@ -120,6 +161,13 @@ export default function UsersPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {showInvite && (
+        <InviteUserModal
+          onClose={() => setShowInvite(false)}
+          onCreated={() => loadUsers()}
+        />
       )}
     </div>
   );

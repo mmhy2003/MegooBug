@@ -47,6 +47,8 @@ export default function SettingsPage() {
   const [smtpUser, setSmtpUser] = useState("");
   const [smtpPass, setSmtpPass] = useState("");
   const [smtpFrom, setSmtpFrom] = useState("");
+  const [smtpSaving, setSmtpSaving] = useState(false);
+  const [smtpMsg, setSmtpMsg] = useState("");
 
   // API Tokens
   const [tokens, setTokens] = useState<ApiToken[]>([]);
@@ -67,6 +69,12 @@ export default function SettingsPage() {
     if (activeTab === "apikeys") {
       loadTokens();
     }
+    if (activeTab === "smtp") {
+      loadSmtp();
+    }
+    if (activeTab === "general") {
+      loadGeneral();
+    }
   }, [activeTab]);
 
   async function loadProfile() {
@@ -85,6 +93,49 @@ export default function SettingsPage() {
       setTokens(data);
     } catch {}
     setTokensLoading(false);
+  }
+
+  async function loadSmtp() {
+    try {
+      const data = await api.get<{ key: string; value: Record<string, string> }>("/api/v1/settings/smtp");
+      if (data.value) {
+        setSmtpHost(data.value.host || "");
+        setSmtpPort(data.value.port || "587");
+        setSmtpUser(data.value.username || "");
+        setSmtpPass(data.value.password || "");
+        setSmtpFrom(data.value.from_email || "");
+      }
+    } catch {}
+  }
+
+  async function handleSmtpSave() {
+    setSmtpSaving(true);
+    setSmtpMsg("");
+    try {
+      await api.put("/api/v1/settings/smtp", {
+        value: {
+          host: smtpHost,
+          port: smtpPort,
+          username: smtpUser,
+          password: smtpPass,
+          from_email: smtpFrom,
+        },
+      });
+      setSmtpMsg("SMTP settings saved successfully");
+    } catch {
+      setSmtpMsg("Failed to save SMTP settings");
+    }
+    setSmtpSaving(false);
+  }
+
+  async function loadGeneral() {
+    try {
+      const data = await api.get<{ key: string; value: Record<string, string> }>("/api/v1/settings/general");
+      if (data.value) {
+        setInstanceName(data.value.instance_name || "MegooBug");
+        setInstanceUrl(data.value.instance_url || "");
+      }
+    } catch {}
   }
 
   async function handleProfileSave(e: FormEvent) {
@@ -265,13 +316,28 @@ export default function SettingsPage() {
               />
             </div>
           </div>
-          <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem" }}>
+          <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
             <button className="btn btn-secondary" id="smtp-test-btn">
               Send Test Email
             </button>
-            <button className="btn btn-primary" id="smtp-save-btn">
-              Save
+            <button
+              className="btn btn-primary"
+              id="smtp-save-btn"
+              onClick={handleSmtpSave}
+              disabled={smtpSaving}
+            >
+              {smtpSaving ? "Saving..." : "Save"}
             </button>
+            {smtpMsg && (
+              <span
+                style={{
+                  fontSize: "0.8125rem",
+                  color: smtpMsg.includes("success") ? "var(--accent-success)" : "var(--accent-error)",
+                }}
+              >
+                {smtpMsg}
+              </span>
+            )}
           </div>
         </div>
       )}

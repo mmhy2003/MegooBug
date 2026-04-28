@@ -13,9 +13,10 @@ from urllib.parse import parse_qs
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.project import Project
+from app.models.project import Project, ProjectMember
 from app.models.issue import Issue, IssueStatus, IssueLevel
 from app.models.event import Event
+from app.models.notification import Notification, NotificationType
 from app.logging import get_logger
 
 logger = get_logger("services.ingest")
@@ -287,6 +288,13 @@ async def process_event(
     db.add(event)
     await db.flush()
 
+    # Dispatch notifications for new issues or regressions
+    if is_new or is_regression:
+        await _create_notifications(
+            db, project, issue,
+            NotificationType.NEW_ISSUE if is_new else NotificationType.REGRESSION,
+        )
+
     return issue, event
 
 
@@ -330,3 +338,48 @@ def _extract_metadata(event_data: dict) -> dict:
         metadata["tags"] = dict(list(tags.items())[:10])
 
     return metadata
+
+
+async def _create_notifications(
+    db: AsyncSession,
+    project: Project,
+    issue: Issue,
+    notification_type: NotificationType,
+) -> None:
+    """Create in-app notifications for all project members."""
+    try:
+        # Get all project members who have notify_inapp enabled
+        result = await db.execute(
+            select(ProjectMember).where(
+                ProjectMember.project_id == project.id,
+                ProjectMember.notify_inapp == True,
+            )
+        )
+        members = result.scalars().all()
+
+        if not members:
+            # Fallback: notify the project creator
+            members_user_ids = [project.created_by]
+        else:
+            members_user_ids = [m.user_id for m in members]
+
+        type_label = "New issue" if notification_type == NotificationType.NEW_ISSUE else "Regression"
+
+        for user_id in members_user_ids:
+            notification = Notification(
+                user_id=user_id,
+                issue_id=issue.id,
+                project_id=project.id,
+                type=notification_type,
+                title=f"{type_label} in {project.name}",
+                body=issue.title[:300],
+            )
+            db.add(notification)
+
+        await db.flush()
+        logger.debug(
+            "Created %d notifications for %s (project=%s, issue=%s)",
+            len(members_user_ids), notification_type.value, project.slug, issue.id,
+        )
+    except Exception as e:
+        logger.error("Failed to create notifications: %s", e)
