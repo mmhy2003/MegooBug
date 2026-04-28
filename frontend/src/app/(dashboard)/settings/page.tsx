@@ -129,12 +129,20 @@ export default function SettingsPage() {
   }
 
   const [smtpTesting, setSmtpTesting] = useState(false);
+  const [testRecipient, setTestRecipient] = useState("");
 
   async function handleSmtpTest() {
     setSmtpTesting(true);
     setSmtpMsg("");
     try {
-      const result = await api.post<{ ok: boolean; message?: string; error?: string }>("/api/v1/settings/smtp/test");
+      const body: Record<string, string> = {};
+      if (testRecipient.trim()) {
+        body.recipient = testRecipient.trim();
+      }
+      const result = await api.post<{ ok: boolean; message?: string; error?: string }>(
+        "/api/v1/settings/smtp/test",
+        Object.keys(body).length > 0 ? body : undefined
+      );
       if (result.ok) {
         setSmtpMsg(result.message || "Test email sent!");
       } else {
@@ -334,33 +342,74 @@ export default function SettingsPage() {
               />
             </div>
           </div>
-          <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
-            <button
-              className="btn btn-secondary"
-              id="smtp-test-btn"
-              onClick={handleSmtpTest}
-              disabled={smtpTesting}
-            >
-              {smtpTesting ? "Sending..." : "Send Test Email"}
-            </button>
-            <button
-              className="btn btn-primary"
-              id="smtp-save-btn"
-              onClick={handleSmtpSave}
-              disabled={smtpSaving}
-            >
-              {smtpSaving ? "Saving..." : "Save"}
-            </button>
-            {smtpMsg && (
+
+          {/* Test Email Section */}
+          <div
+            style={{
+              marginTop: "1.5rem",
+              paddingTop: "1.25rem",
+              borderTop: "1px solid var(--border-color)",
+            }}
+          >
+            <h3 style={{ fontSize: "0.9375rem", marginBottom: "0.75rem" }}>
+              Test Email
+            </h3>
+            <div className="form-group" style={{ maxWidth: 400 }}>
+              <label htmlFor="smtp-test-recipient" className="label">
+                Recipient Email
+              </label>
+              <input
+                id="smtp-test-recipient"
+                className="input"
+                type="email"
+                placeholder="Leave empty to use your account email"
+                value={testRecipient}
+                onChange={(e) => setTestRecipient(e.target.value)}
+              />
               <span
-                style={{
-                  fontSize: "0.8125rem",
-                  color: smtpMsg.includes("success") ? "var(--accent-success)" : "var(--accent-error)",
-                }}
+                className="text-muted"
+                style={{ fontSize: "0.75rem", marginTop: "0.25rem", display: "block" }}
               >
-                {smtpMsg}
+                If empty, the test email will be sent to your account email.
               </span>
-            )}
+            </div>
+            <div
+              style={{
+                marginTop: "0.75rem",
+                display: "flex",
+                gap: "0.75rem",
+                alignItems: "center",
+              }}
+            >
+              <button
+                className="btn btn-secondary"
+                id="smtp-test-btn"
+                onClick={handleSmtpTest}
+                disabled={smtpTesting}
+              >
+                {smtpTesting ? "Sending..." : "Send Test Email"}
+              </button>
+              <button
+                className="btn btn-primary"
+                id="smtp-save-btn"
+                onClick={handleSmtpSave}
+                disabled={smtpSaving}
+              >
+                {smtpSaving ? "Saving..." : "Save Settings"}
+              </button>
+              {smtpMsg && (
+                <span
+                  style={{
+                    fontSize: "0.8125rem",
+                    color: smtpMsg.includes("sent") || smtpMsg.includes("success")
+                      ? "var(--accent-success)"
+                      : "var(--accent-error)",
+                  }}
+                >
+                  {smtpMsg}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}

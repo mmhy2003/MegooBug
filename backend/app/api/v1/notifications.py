@@ -185,10 +185,20 @@ async def list_settings(
 async def test_smtp(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    body: dict | None = None,
 ):
-    """Send a test email using the saved SMTP settings."""
+    """Send a test email using the saved SMTP settings.
+
+    Optionally accepts {"recipient": "user@example.com"} in the request body.
+    Falls back to the logged-in user's email if not provided.
+    """
     import smtplib
     from email.mime.text import MIMEText
+
+    # Determine recipient
+    recipient = current_user.email
+    if body and body.get("recipient"):
+        recipient = body["recipient"].strip()
 
     # Load SMTP settings
     result = await db.execute(select(Setting).where(Setting.key == "smtp"))
@@ -206,7 +216,7 @@ async def test_smtp(
         )
         msg["Subject"] = "MegooBug — SMTP Test"
         msg["From"] = cfg.get("from_email", "noreply@megoobug.local")
-        msg["To"] = current_user.email
+        msg["To"] = recipient
 
         port = int(cfg.get("port", 587))
         with smtplib.SMTP(cfg["host"], port, timeout=10) as server:
@@ -214,10 +224,10 @@ async def test_smtp(
                 server.starttls()
             if cfg.get("username") and cfg.get("password"):
                 server.login(cfg["username"], cfg["password"])
-            server.sendmail(msg["From"], [current_user.email], msg.as_string())
+            server.sendmail(msg["From"], [recipient], msg.as_string())
 
-        logger.info("Test email sent to %s", current_user.email)
-        return {"ok": True, "message": f"Test email sent to {current_user.email}"}
+        logger.info("Test email sent to %s", recipient)
+        return {"ok": True, "message": f"Test email sent to {recipient}"}
 
     except Exception as e:
         logger.error("SMTP test failed: %s", e)
