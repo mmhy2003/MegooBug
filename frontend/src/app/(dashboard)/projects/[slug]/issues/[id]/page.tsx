@@ -66,6 +66,7 @@ export default function IssueDetailPage({
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("stacktrace");
+  const [titleExpanded, setTitleExpanded] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -249,9 +250,41 @@ export default function IssueDetailPage({
       {/* Issue Header */}
       <div className="issue-header">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "0.75rem", wordBreak: "break-word" }}>
+          <h1
+            style={{
+              fontSize: "1.25rem",
+              fontWeight: 600,
+              marginBottom: "0.5rem",
+              wordBreak: "break-word",
+              ...(titleExpanded
+                ? {}
+                : {
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical" as const,
+                    overflow: "hidden",
+                  }),
+            }}
+            title={issue.title}
+          >
             {issue.title}
           </h1>
+          {issue.title.length > 120 && (
+            <button
+              onClick={() => setTitleExpanded(!titleExpanded)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--accent-primary)",
+                cursor: "pointer",
+                fontSize: "0.75rem",
+                padding: 0,
+                marginBottom: "0.75rem",
+              }}
+            >
+              {titleExpanded ? "Show less" : "Show full title"}
+            </button>
+          )}
           <div className="issue-meta">
             <span className={getLevelBadgeClass(issue.level)}>{issue.level}</span>
             <span className={getStatusBadgeClass(issue.status)}>{issue.status}</span>

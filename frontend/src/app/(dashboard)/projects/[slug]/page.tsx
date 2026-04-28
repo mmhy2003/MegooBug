@@ -428,12 +428,22 @@ export default function ProjectDetailPage({
                 <tbody>
                   {issues.map((issue) => (
                     <tr key={issue.id}>
-                      <td>
+                      <td style={{ maxWidth: 420 }}>
                         <Link
                           href={`/projects/${slug}/issues/${issue.id}`}
-                          style={{ color: "var(--text-primary)", textDecoration: "none" }}
+                          style={{ color: "var(--text-primary)", textDecoration: "none", display: "block" }}
+                          title={issue.title}
                         >
-                          <span className="text-mono" style={{ fontSize: "0.8125rem" }}>
+                          <span
+                            className="text-mono"
+                            style={{
+                              fontSize: "0.8125rem",
+                              display: "block",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
                             {issue.title}
                           </span>
                         </Link>
