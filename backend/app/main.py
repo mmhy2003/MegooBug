@@ -16,14 +16,21 @@ logger = get_logger("app")
 
 
 async def _auto_migrate():
-    """Auto-create all database tables on startup."""
-    from app.models import (  # noqa: F401
-        User, Project, ProjectMember, Issue, Event,
-        Notification, Invite, Setting, ApiToken,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables created / verified")
+    """Run Alembic migrations on startup to keep the schema up to date."""
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _run_upgrade():
+        from alembic.config import Config
+        from alembic import command
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        await loop.run_in_executor(executor, _run_upgrade)
+
+    logger.info("Database migrations applied")
 
 
 async def _auto_seed():

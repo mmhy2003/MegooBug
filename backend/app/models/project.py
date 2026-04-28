@@ -1,11 +1,14 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Boolean, DateTime, ForeignKey
+from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Sequence
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+# Auto-incrementing sequence for Sentry-compatible numeric project IDs
+project_number_seq = Sequence("project_number_seq", start=1)
 
 
 class Project(Base):
@@ -13,6 +16,10 @@ class Project(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    project_number: Mapped[int] = mapped_column(
+        Integer, project_number_seq, server_default=project_number_seq.next_value(),
+        unique=True, nullable=False, index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(

@@ -19,6 +19,7 @@ class ProjectUpdate(BaseModel):
 class ProjectResponse(BaseModel):
     """Project detail response."""
     id: UUID
+    project_number: int
     name: str
     slug: str
     platform: str | None = None

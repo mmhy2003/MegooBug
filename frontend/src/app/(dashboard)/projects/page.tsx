@@ -8,6 +8,7 @@ import { CreateProjectModal } from "@/components/create-project-modal";
 
 interface Project {
   id: string;
+  project_number: number;
   name: string;
   slug: string;
   platform: string | null;

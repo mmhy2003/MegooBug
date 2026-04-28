@@ -11,6 +11,7 @@ import { api, ApiError } from "@/lib/api";
 
 interface Project {
   id: string;
+  project_number: number;
   name: string;
   slug: string;
   platform: string | null;
@@ -132,7 +133,7 @@ export default function ProjectDetailPage({
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     try {
       const url = new URL(apiUrl);
-      return `${url.protocol}//${project.dsn_public_key}@${url.host}/api/${project.id}`;
+      return `${url.protocol}//${project.dsn_public_key}@${url.host}/${project.project_number}`;
     } catch {
       return `${apiUrl}/api/${project.id}`;
     }

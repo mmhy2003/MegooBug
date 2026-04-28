@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api";
 
 interface Project {
   id: string;
+  project_number: number;
   name: string;
   slug: string;
   platform: string | null;
@@ -72,7 +73,7 @@ export function CreateProjectModal({ onClose, onCreated }: Props) {
     // <protocol>://<public_key>@<host>/api/<project_id>
     try {
       const url = new URL(apiUrl);
-      return `${url.protocol}//${created.dsn_public_key}@${url.host}/api/${created.id}`;
+      return `${url.protocol}//${created.dsn_public_key}@${url.host}/${created.project_number}`;
     } catch {
       return `${apiUrl}/api/${created.id}`;
     }
