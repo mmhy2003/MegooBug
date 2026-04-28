@@ -92,10 +92,10 @@ services:
     env_file: .env
     environment:
       WATCHPACK_POLLING: "true"
+    command: sh -c "rm -rf /app/.next && npm run dev"
     volumes:
       - ./frontend:/app
       - /app/node_modules
-      - /app/.next
     ports:
       - "3000:3000"
     depends_on:

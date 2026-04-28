@@ -129,29 +129,96 @@ export default function IssueDetailPage({
   }
 
   // Extract exception info from the latest event
+  // Handles: exception.values[], logentry, and threads.values[].stacktrace
   function getExceptions(): ExceptionValue[] {
     if (events.length === 0) return [];
     const latestEvent = events[0];
-    const data = latestEvent.data;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const exc = (data as any)?.exception;
-    if (!exc?.values) return [];
-    return exc.values as ExceptionValue[];
+    const data = latestEvent.data as any;
+
+    // 1. Standard exception interface
+    const exc = data?.exception;
+    if (exc?.values && exc.values.length > 0) {
+      return exc.values as ExceptionValue[];
+    }
+
+    // 2. Build synthetic exception from logentry + threads
+    const results: ExceptionValue[] = [];
+
+    // Extract logentry as the error "header"
+    const logentry = data?.logentry;
+    const message = data?.message;
+    let errorTitle = "";
+    let errorValue = "";
+
+    if (logentry) {
+      errorTitle = logentry.message || "Log Message";
+      errorValue = logentry.formatted || logentry.message || "";
+    } else if (typeof message === "string") {
+      errorTitle = "Message";
+      errorValue = message;
+    } else if (message?.formatted) {
+      errorTitle = "Message";
+      errorValue = message.formatted;
+    }
+
+    // Extract stacktrace from threads
+    let stacktrace: { frames?: StackFrame[] } | undefined;
+    const threads = data?.threads;
+    if (threads) {
+      const threadValues = Array.isArray(threads) ? threads : threads.values;
+      if (Array.isArray(threadValues)) {
+        // Find the crashed thread, or the current thread, or just the first with frames
+        const crashedThread =
+          threadValues.find((t: { crashed?: boolean }) => t.crashed) ||
+          threadValues.find((t: { current?: boolean }) => t.current) ||
+          threadValues.find(
+            (t: { stacktrace?: { frames?: StackFrame[] } }) =>
+              t.stacktrace?.frames && t.stacktrace.frames.length > 0
+          );
+        if (crashedThread?.stacktrace?.frames) {
+          stacktrace = crashedThread.stacktrace;
+        }
+      }
+    }
+
+    if (errorTitle || errorValue || stacktrace) {
+      results.push({
+        type: errorTitle || data?.logger || "Error",
+        value: errorValue,
+        stacktrace,
+      });
+    }
+
+    return results;
   }
 
   // Extract tags/context from latest event
   function getEventMeta() {
     if (events.length === 0) return {};
-    const data = events[0].data;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = events[0].data as any;
+
+    // Build a display message from logentry or message
+    let displayMessage = data?.message;
+    if (data?.logentry?.formatted) {
+      displayMessage = data.logentry.formatted;
+    } else if (data?.logentry?.message) {
+      displayMessage = data.logentry.message;
+    }
+    if (typeof displayMessage === "object") {
+      displayMessage = displayMessage?.formatted || displayMessage?.message || "";
+    }
+
     return {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      sdk: (data as any)?.sdk,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      contexts: (data as any)?.contexts,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tags: (data as any)?.tags,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      message: (data as any)?.message,
+      sdk: data?.sdk,
+      contexts: data?.contexts,
+      tags: data?.tags,
+      message: displayMessage,
+      logger: data?.logger,
+      environment: data?.environment,
+      server_name: data?.server_name,
+      release: data?.release,
     };
   }
 
@@ -362,6 +429,39 @@ export default function IssueDetailPage({
                 {(meta.sdk as { name?: string; version?: string }).name || "unknown"}{" "}
                 {(meta.sdk as { version?: string }).version || ""}
               </p>
+            </div>
+          )}
+
+          {/* Environment info */}
+          {(meta.environment || meta.server_name || meta.logger || meta.release) && (
+            <div className="card">
+              <h3 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>Environment</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.5rem 1.5rem", fontSize: "0.8125rem" }}>
+                {meta.environment && (
+                  <>
+                    <span className="text-muted">Environment</span>
+                    <span>{meta.environment as string}</span>
+                  </>
+                )}
+                {meta.server_name && (
+                  <>
+                    <span className="text-muted">Server</span>
+                    <span className="text-mono">{meta.server_name as string}</span>
+                  </>
+                )}
+                {meta.logger && (
+                  <>
+                    <span className="text-muted">Logger</span>
+                    <span className="text-mono">{meta.logger as string}</span>
+                  </>
+                )}
+                {meta.release && (
+                  <>
+                    <span className="text-muted">Release</span>
+                    <span className="text-mono">{meta.release as string}</span>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
