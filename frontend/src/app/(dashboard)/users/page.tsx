@@ -1,62 +1,60 @@
-import type { Metadata } from "next";
-import { UserPlus } from "lucide-react";
+"use client";
 
-export const metadata: Metadata = {
-  title: "Users — MegooBug",
-  description: "Manage users and roles for your bug tracking instance",
-};
+import { useEffect, useState } from "react";
+import { UserPlus, Loader2, Users as UsersIcon } from "lucide-react";
+import { api } from "@/lib/api";
 
-const users = [
-  {
-    id: 1,
-    name: "Admin User",
-    email: "admin@megoobug.local",
-    role: "admin",
-    status: "active",
-    joined: "2026-01-15",
-  },
-  {
-    id: 2,
-    name: "Jane Developer",
-    email: "jane@example.com",
-    role: "developer",
-    status: "active",
-    joined: "2026-02-20",
-  },
-  {
-    id: 3,
-    name: "Bob Viewer",
-    email: "bob@example.com",
-    role: "viewer",
-    status: "active",
-    joined: "2026-03-10",
-  },
-  {
-    id: 4,
-    name: "Pending User",
-    email: "pending@example.com",
-    role: "developer",
-    status: "invited",
-    joined: "—",
-  },
-];
-
-function getRoleBadge(role: string) {
-  switch (role) {
-    case "admin":
-      return "badge badge-error";
-    case "developer":
-      return "badge badge-info";
-    default:
-      return "badge badge-warning";
-  }
-}
-
-function getStatusBadge(status: string) {
-  return status === "active" ? "badge badge-success" : "badge badge-warning";
+interface UserItem {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
 }
 
 export default function UsersPage() {
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const data = await api.get<UserItem[]>("/api/v1/users");
+        setUsers(data);
+      } catch {
+        // Ignore — show empty state
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  function getRoleBadge(role: string) {
+    switch (role) {
+      case "admin":
+        return "badge badge-error";
+      case "developer":
+        return "badge badge-info";
+      default:
+        return "badge badge-warning";
+    }
+  }
+
+  function formatDate(isoString: string) {
+    if (!isoString) return "—";
+    return new Date(isoString).toLocaleDateString();
+  }
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", padding: "4rem" }}>
+        <Loader2 size={32} className="spin" style={{ color: "var(--text-tertiary)" }} />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -67,47 +65,57 @@ export default function UsersPage() {
         </button>
       </div>
 
-      <div className="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>User</th>
-              <th>Email</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th>Joined</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => (
-              <tr key={user.id}>
-                <td>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                    <div className="user-avatar" style={{ width: 32, height: 32, fontSize: "0.75rem" }}>
-                      {user.name.charAt(0)}
-                    </div>
-                    <span style={{ fontWeight: 500 }}>{user.name}</span>
-                  </div>
-                </td>
-                <td className="text-muted">{user.email}</td>
-                <td>
-                  <span className={getRoleBadge(user.role)}>{user.role}</span>
-                </td>
-                <td>
-                  <span className={getStatusBadge(user.status)}>{user.status}</span>
-                </td>
-                <td className="text-muted">{user.joined}</td>
-                <td>
-                  <button className="btn btn-ghost" style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}>
-                    Edit
-                  </button>
-                </td>
+      {users.length === 0 ? (
+        <div className="card" style={{ textAlign: "center", padding: "3rem" }}>
+          <UsersIcon size={48} style={{ color: "var(--text-tertiary)", marginBottom: "1rem" }} />
+          <h3 style={{ marginBottom: "0.5rem" }}>No users found</h3>
+          <p className="text-muted">Invite team members to start collaborating.</p>
+        </div>
+      ) : (
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Joined</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.id}>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <div className="user-avatar" style={{ width: 32, height: 32, fontSize: "0.75rem" }}>
+                        {user.name.charAt(0)}
+                      </div>
+                      <span style={{ fontWeight: 500 }}>{user.name}</span>
+                    </div>
+                  </td>
+                  <td className="text-muted">{user.email}</td>
+                  <td>
+                    <span className={getRoleBadge(user.role)}>{user.role}</span>
+                  </td>
+                  <td>
+                    <span className={user.is_active ? "badge badge-success" : "badge badge-warning"}>
+                      {user.is_active ? "active" : "disabled"}
+                    </span>
+                  </td>
+                  <td className="text-muted">{formatDate(user.created_at)}</td>
+                  <td>
+                    <button className="btn btn-ghost" style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}>
+                      Edit
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

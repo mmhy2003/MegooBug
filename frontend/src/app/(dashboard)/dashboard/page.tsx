@@ -1,101 +1,121 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   FolderKanban,
   Activity,
   Users,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
-export const metadata: Metadata = {
-  title: "Dashboard — MegooBug",
-  description: "Overview of your bug tracking metrics and recent issues",
-};
+interface DashboardStats {
+  total_projects: number;
+  errors_24h: number;
+  unresolved_issues: number;
+  active_users: number;
+}
 
-// Placeholder data — will be replaced with API calls
-const stats = [
-  {
-    label: "Total Projects",
-    value: "12",
-    icon: FolderKanban,
-    accent: false,
-  },
-  {
-    label: "Errors (24h)",
-    value: "847",
-    icon: AlertTriangle,
-    accent: true,
-  },
-  {
-    label: "Unresolved Issues",
-    value: "156",
-    icon: Activity,
-    accent: true,
-  },
-  {
-    label: "Active Users",
-    value: "24",
-    icon: Users,
-    accent: false,
-  },
-];
-
-const recentIssues = [
-  {
-    id: 1,
-    title: "TypeError: Cannot read property 'map' of undefined",
-    project: "web-frontend",
-    level: "error",
-    count: 42,
-    lastSeen: "2 min ago",
-  },
-  {
-    id: 2,
-    title: "ConnectionRefusedError: Redis connection failed",
-    project: "api-server",
-    level: "fatal",
-    count: 18,
-    lastSeen: "5 min ago",
-  },
-  {
-    id: 3,
-    title: "Warning: Each child in a list should have a unique key",
-    project: "web-frontend",
-    level: "warning",
-    count: 203,
-    lastSeen: "12 min ago",
-  },
-  {
-    id: 4,
-    title: "PermissionError: Permission denied: '/tmp/cache'",
-    project: "worker-service",
-    level: "error",
-    count: 7,
-    lastSeen: "1 hour ago",
-  },
-  {
-    id: 5,
-    title: "TimeoutError: Request timed out after 30000ms",
-    project: "api-server",
-    level: "warning",
-    count: 56,
-    lastSeen: "2 hours ago",
-  },
-];
-
-function getLevelBadgeClass(level: string) {
-  switch (level) {
-    case "fatal":
-      return "badge badge-error badge-pulse";
-    case "error":
-      return "badge badge-error";
-    case "warning":
-      return "badge badge-warning";
-    default:
-      return "badge badge-info";
-  }
+interface RecentIssue {
+  id: string;
+  title: string;
+  project_id: string;
+  level: string;
+  event_count: number;
+  last_seen: string;
+  status: string;
 }
 
 export default function DashboardPage() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [issues, setIssues] = useState<RecentIssue[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [statsData, issuesData] = await Promise.allSettled([
+          api.get<DashboardStats>("/api/v1/stats/dashboard"),
+          api.get<{ items: RecentIssue[] }>("/api/v1/projects/_/issues"),
+        ]);
+
+        if (statsData.status === "fulfilled") {
+          setStats(statsData.value);
+        }
+        // Issues endpoint might fail if no projects exist yet — that's fine
+        if (issuesData.status === "fulfilled") {
+          setIssues(issuesData.value.items || []);
+        }
+      } catch {
+        // Ignore — we show empty state
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  function formatRelativeTime(isoString: string) {
+    if (!isoString) return "—";
+    const diff = Date.now() - new Date(isoString).getTime();
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 1) return "just now";
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  }
+
+  function getLevelBadgeClass(level: string) {
+    switch (level) {
+      case "fatal":
+        return "badge badge-error badge-pulse";
+      case "error":
+        return "badge badge-error";
+      case "warning":
+        return "badge badge-warning";
+      default:
+        return "badge badge-info";
+    }
+  }
+
+  const statCards = [
+    {
+      label: "Total Projects",
+      value: stats?.total_projects ?? 0,
+      icon: FolderKanban,
+      accent: false,
+    },
+    {
+      label: "Errors (24h)",
+      value: stats?.errors_24h ?? 0,
+      icon: AlertTriangle,
+      accent: true,
+    },
+    {
+      label: "Unresolved Issues",
+      value: stats?.unresolved_issues ?? 0,
+      icon: Activity,
+      accent: true,
+    },
+    {
+      label: "Active Users",
+      value: stats?.active_users ?? 0,
+      icon: Users,
+      accent: false,
+    },
+  ];
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", padding: "4rem" }}>
+        <Loader2 size={32} className="spin" style={{ color: "var(--text-tertiary)" }} />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -104,7 +124,7 @@ export default function DashboardPage() {
 
       {/* Stat Cards */}
       <div className="stat-grid">
-        {stats.map((stat) => {
+        {statCards.map((stat) => {
           const Icon = stat.icon;
           return (
             <div className="stat-card" key={stat.label}>
@@ -144,44 +164,48 @@ export default function DashboardPage() {
         <h2 style={{ fontSize: "1.125rem", marginBottom: "1rem" }}>
           Recent Issues
         </h2>
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>Issue</th>
-                <th>Project</th>
-                <th>Level</th>
-                <th>Events</th>
-                <th>Last Seen</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentIssues.map((issue) => (
-                <tr key={issue.id} style={{ cursor: "pointer" }}>
-                  <td>
-                    <span className="text-mono" style={{ fontSize: "0.8125rem" }}>
-                      {issue.title}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="badge badge-info">{issue.project}</span>
-                  </td>
-                  <td>
-                    <span className={getLevelBadgeClass(issue.level)}>
-                      {issue.level}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="text-mono">{issue.count}</span>
-                  </td>
-                  <td>
-                    <span className="text-muted">{issue.lastSeen}</span>
-                  </td>
+        {issues.length === 0 ? (
+          <div className="card" style={{ textAlign: "center", padding: "2rem" }}>
+            <p className="text-muted">No issues yet. Connect a Sentry SDK to start tracking errors.</p>
+          </div>
+        ) : (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Issue</th>
+                  <th>Level</th>
+                  <th>Events</th>
+                  <th>Last Seen</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {issues.map((issue) => (
+                  <tr key={issue.id} style={{ cursor: "pointer" }}>
+                    <td>
+                      <span className="text-mono" style={{ fontSize: "0.8125rem" }}>
+                        {issue.title}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={getLevelBadgeClass(issue.level)}>
+                        {issue.level}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="text-mono">{issue.event_count}</span>
+                    </td>
+                    <td>
+                      <span className="text-muted">
+                        {formatRelativeTime(issue.last_seen)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
