@@ -423,14 +423,17 @@ async def process_event(
                 "first_seen": issue.first_seen.isoformat() if issue.first_seen else "",
             }
             # Per-project event
-            await publish_to_project(str(project.id), {
+            event_msg = {
                 "type": "new_event",
                 "project_id": str(project.id),
                 "project_slug": project.slug,
                 "issue": issue_payload,
                 "is_new_issue": is_new,
                 "is_regression": is_regression,
-            })
+            }
+            await publish_to_project(str(project.id), event_msg)
+            # Also publish to global so dashboard picks it up
+            await publish_global(event_msg)
             # Global stats bump
             await publish_global({
                 "type": "stats_update",

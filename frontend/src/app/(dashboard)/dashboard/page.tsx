@@ -64,21 +64,43 @@ export default function DashboardPage() {
       });
     }
 
-    if (lastMessage.type === "new_event" && lastMessage.is_new_issue && lastMessage.issue) {
+    if (lastMessage.type === "new_event" && lastMessage.issue) {
       const iss = lastMessage.issue;
-      setIssues((prev) => {
-        const newIssue: RecentIssue = {
-          id: iss.id,
-          project_id: lastMessage.project_id || "",
-          title: iss.title || "Unknown",
-          status: iss.status || "unresolved",
-          level: iss.level || "error",
-          event_count: iss.event_count || 1,
-          first_seen: iss.first_seen || new Date().toISOString(),
-          last_seen: iss.last_seen || new Date().toISOString(),
-        };
-        return [newIssue, ...prev].slice(0, 10);
-      });
+
+      if (lastMessage.is_new_issue) {
+        // New issue: prepend to the list
+        setIssues((prev) => {
+          const newIssue: RecentIssue = {
+            id: iss.id,
+            project_id: lastMessage.project_id || "",
+            title: iss.title || "Unknown",
+            status: iss.status || "unresolved",
+            level: iss.level || "error",
+            event_count: iss.event_count || 1,
+            first_seen: iss.first_seen || new Date().toISOString(),
+            last_seen: iss.last_seen || new Date().toISOString(),
+          };
+          return [newIssue, ...prev].slice(0, 10);
+        });
+      } else {
+        // Existing issue: update event_count and last_seen, re-sort to top
+        setIssues((prev) => {
+          const updated = prev.map((i) =>
+            i.id === iss.id
+              ? {
+                  ...i,
+                  event_count: iss.event_count || i.event_count + 1,
+                  last_seen: iss.last_seen || new Date().toISOString(),
+                }
+              : i
+          );
+          // Re-sort by last_seen so the most recent appears first
+          updated.sort(
+            (a, b) => new Date(b.last_seen).getTime() - new Date(a.last_seen).getTime()
+          );
+          return updated;
+        });
+      }
     }
   }, [lastMessage]);
   useEffect(() => {
