@@ -17,5 +17,7 @@ celery_app.conf.update(
     task_default_queue="default",
 )
 
-# Auto-discover tasks from app.tasks package
-celery_app.autodiscover_tasks(["app.tasks"])
+# Register task modules explicitly
+celery_app.conf.include = [
+    "app.tasks.event_tasks",
+]
