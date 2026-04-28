@@ -59,7 +59,7 @@
 
 ### 3.1 Data Flow
 
-1. **Ingest** — Client SDKs POST to `/api/v1/store/` (Sentry-compatible envelope/store endpoint).
+1. **Ingest** — Client SDKs POST to `/api/{project_id}/store/` or `/api/{project_id}/envelope/` (Sentry-compatible endpoints). Auth via DSN public key in `X-Sentry-Auth` header or `?sentry_key=` query param.
 2. **Process** — FastAPI validates, normalizes, and groups the event into an **Issue**.
 3. **Persist** — Event + Issue stored in PostgreSQL; counters updated in Redis.
 4. **Index** — Celery task indexes the issue/event into Meilisearch for instant search.
@@ -92,7 +92,7 @@ MegooBug/
 │       ├── main.py          # App factory + auto-migrate + auto-seed
 │       ├── config.py        # Pydantic settings (from env)
 │       ├── database.py      # Async SQLAlchemy engine + session
-│       ├── dependencies.py  # Auth + RBAC dependencies
+│       ├── dependencies.py  # Dual auth (Cookie JWT + Bearer API token) + RBAC
 │       ├── logging.py       # Structured logging configuration
 │       ├── worker.py        # Celery configuration
 │       ├── api/v1/          # API route modules
@@ -171,15 +171,24 @@ The backend uses a centralized logging module (`app/logging.py`) instead of `pri
 
 ### 4.8 Makefile Targets
 
+Running `make` (with no arguments) prints all available commands.
+
 | Target | Description |
 |--------|-------------|
+| `make` | **Show help** — list all available commands |
 | `make dev` | Build & start development stack (detached) |
 | `make prod` | Start production stack |
 | `make down` | Stop all containers |
 | `make logs` | Tail all service logs |
+| `make logs-be` | Tail backend logs only |
+| `make logs-fe` | Tail frontend logs only |
 | `make migrate` | Run Alembic migrations (backup — auto-migrate handles this) |
+| `make migration` | Create new Alembic migration (`msg="description"`) |
 | `make seed` | Seed admin user (backup — auto-seed handles this) |
+| `make reindex` | Full Meilisearch re-index |
 | `make test` | Run backend + frontend tests |
+| `make test-be` | Run backend tests only |
+| `make test-fe` | Run frontend tests only |
 | `make lint` | Lint both codebases (ruff + eslint) |
 | `make clean` | Remove volumes and images |
 | `make shell-be` | Shell into backend container |
@@ -193,7 +202,9 @@ The backend uses a centralized logging module (`app/logging.py`) instead of `pri
 
 | Feature | Details |
 |---------|---------|
-| Method | JWT (access + refresh tokens), HTTP-only cookies |
+| Web UI | JWT (access + refresh tokens), HTTP-only cookies |
+| API / CLI | Bearer API tokens (`mgb_` prefix), bcrypt hashed, looked up by prefix |
+| Dual Auth | `get_current_user` dependency tries cookie JWT first, then falls back to Bearer token. Both methods yield the same `User` object. |
 | Signup | Controlled via `ALLOW_SIGNUP=true/false` env var |
 | Invite | Admins generate invite links (token-based, expirable) |
 | Password | bcrypt hashed, min 8 chars |
@@ -741,6 +752,7 @@ APP_NAME=MegooBug
 APP_URL=http://localhost:3000
 SECRET_KEY=<random-64-char>
 ENVIRONMENT=development          # development | production
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000  # comma-separated
 
 # ── Auth ──
 ALLOW_SIGNUP=false               # true | false
@@ -772,6 +784,7 @@ MEILISEARCH_MASTER_KEY=<random-32-char>
 # ── Frontend ──
 NEXT_PUBLIC_API_URL=http://localhost:8000
 NEXT_PUBLIC_WS_URL=ws://localhost:8000
+ALLOWED_DEV_ORIGINS=              # comma-separated hostnames for Next.js dev mode
 
 # ── Seed Admin (used on first startup only) ──
 ADMIN_EMAIL=admin@megoobug.local
@@ -795,7 +808,7 @@ ADMIN_NAME=Admin
 | SQL Injection | SQLAlchemy ORM (parameterized queries) |
 | XSS | React auto-escaping + CSP headers |
 | Secrets | `.env` file, never committed; Docker secrets in prod |
-| CORS | Configurable allowed origins |
+| CORS | Configurable via `CORS_ORIGINS` env var (comma-separated origins) |
 
 ---
 
@@ -804,8 +817,8 @@ ADMIN_NAME=Admin
 | Phase | Scope | Est. Duration |
 |-------|-------|---------------|
 | **Phase 1 — Foundation** ✅ | Project scaffold, Docker setup, Makefile, DB models (8), auth (login/signup/invite), user CRUD, role middleware, auto-migration, auto-seed, structured logging, CyberPunk CSS design system, frontend shell (all pages scaffolded) | 2 weeks |
-| **Phase 2 — Core** | Project CRUD, Sentry ingest endpoints, event processing & grouping, issue management, API token management, Sentry-compatible REST API (`/api/0/`) for Sentry CLI & MCP integration | 3 weeks |
-| **Phase 3 — Frontend** | Dashboard data integration, project detail with issues, issue detail with stack traces, user management integration | 3 weeks |
+| **Phase 2 — Core** ✅ | Project CRUD (8 endpoints), Sentry ingest (`/store/` + `/envelope/`), event processing (fingerprinting, dedup, regression), issue management (5 endpoints), API token management (create/list/revoke with `mgb_` prefix), Sentry-compatible REST API (`/api/0/` — 14 endpoints), dashboard stats API, dual auth (Cookie JWT + Bearer token), CORS env config, `make help`, frontend wired to live API (removed all hardcoded placeholder data) | 3 weeks |
+| **Phase 3 — Frontend** | Project detail with issues, issue detail with stack traces, create project modal, error trend charts, notification bell integration | 3 weeks |
 | **Phase 4 — Notifications** | WebSocket setup, in-app notification bell, email notifications, SMTP settings UI, notification preferences | 2 weeks |
 | **Phase 5 — Polish** | CyberPunk theme finalization, responsive testing, dark/light/system, animations, performance optimization | 1 week |
 | **Phase 6 — Release** | Documentation, README, contributing guide, CI/CD, initial release | 1 week |
