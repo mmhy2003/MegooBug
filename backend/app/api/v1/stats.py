@@ -69,17 +69,18 @@ async def project_trends(
     start = now - timedelta(days=days)
 
     # Get daily event counts using date_trunc
+    day_col = func.date_trunc("day", Event.received_at).label("day")
     trend_query = (
         select(
-            func.date_trunc("day", Event.received_at).label("day"),
+            day_col,
             func.count(Event.id).label("count"),
         )
         .where(
             Event.project_id == project.id,
             Event.received_at >= start,
         )
-        .group_by(func.date_trunc("day", Event.received_at))
-        .order_by(func.date_trunc("day", Event.received_at))
+        .group_by(day_col)
+        .order_by(day_col)
     )
     trend_result = await db.execute(trend_query)
 

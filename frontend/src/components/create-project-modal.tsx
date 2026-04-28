@@ -68,7 +68,14 @@ export function CreateProjectModal({ onClose, onCreated }: Props) {
   function getDSN() {
     if (!created) return "";
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    return `${apiUrl}/api/${created.id}`;
+    // Parse the host from the API URL to build the Sentry DSN format:
+    // <protocol>://<public_key>@<host>/api/<project_id>
+    try {
+      const url = new URL(apiUrl);
+      return `${url.protocol}//${created.dsn_public_key}@${url.host}/api/${created.id}`;
+    } catch {
+      return `${apiUrl}/api/${created.id}`;
+    }
   }
 
   async function copyDSN() {
@@ -98,9 +105,9 @@ export function CreateProjectModal({ onClose, onCreated }: Props) {
               Use the DSN below to configure your Sentry SDK:
             </p>
 
-            <label className="label">DSN Public Key</label>
+            <label className="label">Client DSN</label>
             <div className="dsn-display">
-              <span className="dsn-value">{created.dsn_public_key}</span>
+              <span className="dsn-value">{getDSN()}</span>
               <button
                 className={`copy-btn ${copied ? "copied" : ""}`}
                 onClick={copyDSN}
@@ -110,12 +117,10 @@ export function CreateProjectModal({ onClose, onCreated }: Props) {
               </button>
             </div>
 
-            <label className="label" style={{ marginTop: "1rem" }}>
-              Store Endpoint
-            </label>
-            <div className="dsn-display">
-              <span className="dsn-value">{getDSN()}/store/</span>
-            </div>
+            <p className="text-muted" style={{ marginTop: "0.75rem", fontSize: "0.8125rem" }}>
+              Paste this into your Sentry SDK&apos;s <code>dsn</code> option — e.g.{" "}
+              <code>Sentry.init({"{"} dsn: &quot;...&quot; {"}"})</code>
+            </p>
 
             <div className="modal-actions">
               <button className="btn btn-primary" onClick={onClose}>

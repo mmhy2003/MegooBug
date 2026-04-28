@@ -74,14 +74,20 @@ export default function ProjectDetailPage({
   useEffect(() => {
     async function load() {
       try {
-        const [proj, trendData] = await Promise.all([
-          api.get<Project>(`/api/v1/projects/${slug}`),
-          api.get<TrendData>(`/api/v1/stats/projects/${slug}/trends?days=14`),
-        ]);
+        const proj = await api.get<Project>(`/api/v1/projects/${slug}`);
         setProject(proj);
-        setTrend(trendData.data);
         setEditName(proj.name);
         setEditPlatform(proj.platform || "");
+
+        // Trend fetch is non-critical — don't redirect if it fails
+        try {
+          const trendData = await api.get<TrendData>(
+            `/api/v1/stats/projects/${slug}/trends?days=14`
+          );
+          setTrend(trendData.data);
+        } catch {
+          // Trend data unavailable — show empty chart
+        }
       } catch {
         router.push("/projects");
       } finally {
@@ -121,12 +127,20 @@ export default function ProjectDetailPage({
     }
   }
 
-  async function copyDSN() {
-    if (!project) return;
+  function getFullDSN() {
+    if (!project) return "";
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const dsn = `${apiUrl}/api/${project.id}`;
     try {
-      await navigator.clipboard.writeText(dsn);
+      const url = new URL(apiUrl);
+      return `${url.protocol}//${project.dsn_public_key}@${url.host}/api/${project.id}`;
+    } catch {
+      return `${apiUrl}/api/${project.id}`;
+    }
+  }
+
+  async function copyDSN() {
+    try {
+      await navigator.clipboard.writeText(getFullDSN());
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {}
@@ -256,7 +270,7 @@ export default function ProjectDetailPage({
             </p>
             <div className="dsn-display">
               <span className="dsn-value">
-                {apiUrl}/api/{project.id}
+                {getFullDSN()}
               </span>
               <button
                 className={`copy-btn ${copied ? "copied" : ""}`}
