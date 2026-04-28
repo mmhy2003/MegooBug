@@ -10,6 +10,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useWS } from "@/components/websocket-provider";
 
 interface DashboardStats {
   total_projects: number;
@@ -45,7 +46,41 @@ export default function DashboardPage() {
   const [issues, setIssues] = useState<RecentIssue[]>([]);
   const [projects, setProjects] = useState<Map<string, Project>>(new Map());
   const [loading, setLoading] = useState(true);
+  const { lastMessage } = useWS();
 
+  // Real-time: handle WebSocket messages for live stat updates
+  useEffect(() => {
+    if (!lastMessage) return;
+
+    if (lastMessage.type === "stats_update") {
+      setStats((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          errors_24h: prev.errors_24h + (lastMessage.errors_24h_delta || 0),
+          unresolved_issues:
+            prev.unresolved_issues + (lastMessage.unresolved_delta || 0),
+        };
+      });
+    }
+
+    if (lastMessage.type === "new_event" && lastMessage.is_new_issue && lastMessage.issue) {
+      const iss = lastMessage.issue;
+      setIssues((prev) => {
+        const newIssue: RecentIssue = {
+          id: iss.id,
+          project_id: lastMessage.project_id || "",
+          title: iss.title || "Unknown",
+          status: iss.status || "unresolved",
+          level: iss.level || "error",
+          event_count: iss.event_count || 1,
+          first_seen: iss.first_seen || new Date().toISOString(),
+          last_seen: iss.last_seen || new Date().toISOString(),
+        };
+        return [newIssue, ...prev].slice(0, 10);
+      });
+    }
+  }, [lastMessage]);
   useEffect(() => {
     async function load() {
       try {

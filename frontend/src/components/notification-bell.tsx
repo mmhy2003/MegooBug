@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { Bell, Check, CheckCheck, AlertTriangle, RefreshCw, X } from "lucide-react";
 import { api } from "@/lib/api";
+import { useWS } from "@/components/websocket-provider";
 
 interface NotificationItem {
   id: string;
@@ -28,8 +29,9 @@ export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const { lastMessage, status: wsStatus } = useWS();
 
-  // Poll unread count every 30s
+  // Poll unread count every 30s (fallback when WebSocket is disconnected)
   const fetchUnreadCount = useCallback(async () => {
     try {
       const data = await api.get<{ count: number }>("/api/v1/notifications/unread-count");
@@ -44,6 +46,32 @@ export function NotificationBell() {
     const interval = setInterval(fetchUnreadCount, 30000);
     return () => clearInterval(interval);
   }, [fetchUnreadCount]);
+
+  // Real-time: handle WebSocket notification messages
+  useEffect(() => {
+    if (!lastMessage || lastMessage.type !== "new_notification") return;
+    const n = lastMessage.notification;
+    if (!n) return;
+
+    // Increment unread count
+    setUnreadCount((prev) => prev + 1);
+
+    // Prepend to notifications list if the dropdown has been loaded
+    setNotifications((prev) => {
+      // Build a synthetic notification item
+      const item: NotificationItem = {
+        id: `ws-${Date.now()}`, // Temporary ID until next poll
+        type: n.type || "new_issue",
+        title: n.title || "New notification",
+        body: n.body || null,
+        is_read: false,
+        issue_id: n.issue_id || null,
+        project_id: n.project_id || null,
+        created_at: n.created_at || new Date().toISOString(),
+      };
+      return [item, ...prev].slice(0, 20); // Keep max 20
+    });
+  }, [lastMessage]);
 
   // Close on click outside
   useEffect(() => {

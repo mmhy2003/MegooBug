@@ -8,6 +8,7 @@ import {
   FolderKanban, AlertTriangle,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { useWS } from "@/components/websocket-provider";
 
 interface Project {
   id: string;
@@ -57,6 +58,7 @@ export default function ProjectDetailPage({
 }) {
   const { slug } = use(params);
   const router = useRouter();
+  const { lastMessage, subscribe, unsubscribe } = useWS();
 
   const [project, setProject] = useState<Project | null>(null);
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -71,6 +73,58 @@ export default function ProjectDetailPage({
   const [editName, setEditName] = useState("");
   const [editPlatform, setEditPlatform] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Subscribe to project-specific WebSocket channel
+  useEffect(() => {
+    if (!project) return;
+    subscribe("project", project.id);
+    return () => {
+      unsubscribe("project", project.id);
+    };
+  }, [project, subscribe, unsubscribe]);
+
+  // Real-time: handle new_event messages for this project
+  useEffect(() => {
+    if (!lastMessage || !project) return;
+    if (lastMessage.type !== "new_event") return;
+    if (lastMessage.project_id !== project.id) return;
+
+    const iss = lastMessage.issue;
+    if (!iss) return;
+
+    if (lastMessage.is_new_issue) {
+      // Prepend new issue
+      setIssues((prev) => {
+        const newIssue: Issue = {
+          id: iss.id,
+          project_id: project.id,
+          title: iss.title || "Unknown",
+          fingerprint: "",
+          status: iss.status || "unresolved",
+          level: iss.level || "error",
+          first_seen: iss.first_seen || new Date().toISOString(),
+          last_seen: iss.last_seen || new Date().toISOString(),
+          event_count: iss.event_count || 1,
+          metadata_: null,
+        };
+        return [newIssue, ...prev];
+      });
+      setIssueTotal((prev) => prev + 1);
+    } else {
+      // Update existing issue's event_count and last_seen
+      setIssues((prev) =>
+        prev.map((i) =>
+          i.id === iss.id
+            ? {
+                ...i,
+                event_count: iss.event_count || i.event_count + 1,
+                last_seen: iss.last_seen || new Date().toISOString(),
+              }
+            : i
+        )
+      );
+    }
+  }, [lastMessage, project]);
 
   useEffect(() => {
     async function load() {

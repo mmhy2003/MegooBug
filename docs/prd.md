@@ -59,12 +59,59 @@
 
 ### 3.1 Data Flow
 
-1. **Ingest** — Client SDKs POST to `/api/{project_id}/store/` or `/api/{project_id}/envelope/` (Sentry-compatible endpoints). Auth via DSN public key in `X-Sentry-Auth` header or `?sentry_key=` query param.
-2. **Process** — FastAPI validates, normalizes, and groups the event into an **Issue**.
+1. **Ingest** — Client SDKs POST to `/api/{project_id}/store/` or `/api/{project_id}/envelope/` (Sentry-compatible endpoints). Auth via DSN public key in `X-Sentry-Auth` header, `?sentry_key=` query param, or envelope header DSN.
+2. **Process** — FastAPI validates, normalizes, decompresses (gzip auto-detection), parses length-prefixed envelope items, and groups the event into an **Issue**.
 3. **Persist** — Event + Issue stored in PostgreSQL; counters updated in Redis.
 4. **Index** — Celery task indexes the issue/event into Meilisearch for instant search.
-5. **Notify** — Celery task fans out: WebSocket push (in-app bell) + email (if SMTP configured).
-6. **Display** — Next.js frontend polls/subscribes for live updates.
+5. **Notify** — In-app notifications created for project members. **WebSocket push** via Redis pub/sub delivers instant updates to connected clients.
+6. **Display** — Next.js frontend receives real-time updates via WebSocket; falls back to 30s polling when disconnected.
+
+### 3.2 Real-Time Architecture (WebSocket + Redis Pub/Sub)
+
+```
+┌───────────┐    POST     ┌──────────────┐    PUBLISH    ┌─────────┐
+│ Sentry SDK├────────────►│  FastAPI      ├─────────────►│  Redis  │
+└───────────┘             │  Ingest       │              │ Pub/Sub │
+                          └──────┬───────┘              └────┬────┘
+                                 │                           │ SUBSCRIBE
+                                 ▼                           ▼
+                          ┌──────────────┐    WebSocket  ┌──────────┐
+                          │  PostgreSQL  │               │ WS Server│
+                          └──────────────┘               └────┬─────┘
+                                                              │ Push
+                                                              ▼
+                                                         ┌──────────┐
+                                                         │ Next.js  │
+                                                         │ Frontend │
+                                                         └──────────┘
+```
+
+**Channels:**
+
+| Channel | Purpose |
+|---------|---------|
+| `megoobug:user:{user_id}` | Per-user notifications (bell icon) |
+| `megoobug:project:{project_id}` | Per-project events (issue list updates) |
+| `megoobug:global` | Instance-wide stats (dashboard counters, project card badges) |
+
+**WebSocket Protocol (`/ws/notifications`):**
+
+Server → Client messages:
+- `{"type": "new_notification", "notification": {...}}` — New notification for bell icon
+- `{"type": "new_event", "project_id": "...", "issue": {...}, "is_new_issue": true}` — Issue created/updated
+- `{"type": "stats_update", "project_id": "...", "unresolved_delta": 1, "errors_24h_delta": 1}` — Stats bump
+- `{"type": "ping"}` — Server heartbeat (every 30s)
+
+Client → Server messages:
+- `{"action": "subscribe", "channel": "project", "id": "<project_id>"}` — Join project channel
+- `{"action": "unsubscribe", "channel": "project", "id": "<project_id>"}` — Leave project channel
+- `{"type": "pong"}` — Heartbeat response
+
+**Frontend Integration:**
+- `WebSocketProvider` context wraps the dashboard layout, sharing a single connection across all pages
+- `useWS()` hook exposes `lastMessage`, `status`, `subscribe()`, `unsubscribe()`
+- Auto-reconnect with exponential backoff (1s → 30s max)
+- Auth via `access_token` HTTP-only cookie on WebSocket handshake
 
 ---
 
@@ -80,7 +127,11 @@ MegooBug/
 │   ├── src/
 │   │   ├── app/             # App Router pages & layouts
 │   │   ├── components/      # Shared UI components
+│   │   │   ├── websocket-provider.tsx  # WebSocket React context
+│   │   │   └── ...
 │   │   └── lib/             # API client, utilities
+│   │       ├── api.ts       # REST API client
+│   │       └── useWebSocket.ts  # WebSocket hook (auto-reconnect)
 │   └── ...
 ├── backend/                 # FastAPI app
 │   ├── Dockerfile           # Multi-stage production build
@@ -96,9 +147,12 @@ MegooBug/
 │       ├── logging.py       # Structured logging configuration
 │       ├── worker.py        # Celery configuration
 │       ├── api/v1/          # API route modules
+│       ├── api/websocket.py # WebSocket endpoint (/ws/notifications)
 │       ├── models/          # SQLAlchemy ORM models
 │       ├── schemas/         # Pydantic request/response schemas
-│       ├── services/        # Business logic (auth, etc.)
+│       ├── services/        # Business logic (auth, ingest, etc.)
+│       │   ├── pubsub.py    # Redis pub/sub publisher
+│       │   └── ...
 │       ├── tasks/           # Celery task modules
 │       └── scripts/         # CLI scripts (seed, etc.)
 ├── docker-compose.yml       # Production
@@ -269,18 +323,20 @@ Running `make` (with no arguments) prints all available commands.
 Additional sections:
 - **Recent Unresolved Issues** — Table of latest 10 unresolved issues across all projects, with clickable rows linking to issue detail.
 - Project names resolved from a project map lookup.
+- **Real-time:** stat counters increment live via WebSocket `stats_update` events; new issues prepend to the table via `new_event` events.
 
 ### 6.3 Projects (`/projects`) ✅
 
 **List View:**
-- Project cards showing: name, platform/slug, creation time. Clickable → project detail.
+- Project cards showing: name, platform/slug, creation time, **unresolved issue count badge** (red pill with AlertCircle icon). Clickable → project detail.
+- **Real-time:** unresolved count badge increments live when new issues arrive via WebSocket.
 - **Create Project** button → glassmorphism modal: name (required) + platform (select). On success: shows DSN with copy button.
 - Empty state with CTA when no projects exist.
 
 **Project Detail (`/projects/:slug`):** ✅
 - Breadcrumb navigation: Projects → Project Name.
 - **Overview** tab — Client DSN with copy button, public key display, 14-day error trend bar chart (CSS-only, no external chart library), project metadata (slug, platform, created).
-- **Issues** tab — Filterable by status (All / Unresolved / Resolved / Ignored). Table with level badge, event count, status dot, last seen, and inline Resolve / Ignore / Unresolve action buttons.
+- **Issues** tab — Filterable by status (All / Unresolved / Resolved / Ignored). Table with level badge, event count, status dot, last seen, and inline Resolve / Ignore / Unresolve action buttons. **Real-time:** subscribes to project WebSocket channel; new issues appear instantly, existing issue event counts update live.
 - **Settings** tab — Edit name/platform with save, Danger Zone with delete confirmation dialog.
 
 **Issue Detail (`/projects/:slug/issues/:id`):** ✅
@@ -334,15 +390,29 @@ Tab-based layout with active tab highlighting:
 
 ## 7. Notification System
 
-### 7.1 In-App Notifications (Bell Icon)
+### 7.1 In-App Notifications (Bell Icon) ✅
 
 - **Bell icon** in header bar with unread count badge.
 - Dropdown panel shows recent notifications grouped by project.
 - Each notification: icon (error/warning/info), title, project name, relative time.
 - "Mark all read" and per-item "mark read" actions.
-- **Real-time delivery** via WebSocket (Redis pub/sub → backend WS → frontend).
+- **Real-time delivery** via WebSocket (Redis pub/sub → backend WS → frontend). New notifications instantly increment the badge and prepend to the dropdown list.
+- **Fallback**: 30-second polling when WebSocket is disconnected.
 
-### 7.2 Email Notifications
+### 7.2 Real-Time UI Updates ✅
+
+All dashboard pages receive live updates via the shared WebSocket connection:
+
+| Page | Update Trigger | UI Effect |
+|------|---------------|----------|
+| **Dashboard** | `stats_update` | Increment "Errors (24h)" and "Unresolved Issues" counters |
+| **Dashboard** | `new_event` (new issue) | Prepend issue to "Recent Unresolved Issues" table |
+| **Projects** | `stats_update` | Increment unresolved count badge on the matching project card |
+| **Project Detail** | `new_event` (new issue) | Prepend new issue to the issues list |
+| **Project Detail** | `new_event` (existing issue) | Update event count and last seen timestamp in-place |
+| **Notification Bell** | `new_notification` | Increment badge, prepend to dropdown |
+
+### 7.3 Email Notifications
 
 - Sent when a **new issue** is created or a **resolved issue regresses**.
 - Only sent to users **subscribed to the project**.
@@ -350,7 +420,7 @@ Tab-based layout with active tab highlighting:
 - Email contains: issue title, stack trace summary, direct link to issue detail.
 - **Throttling** — Configurable rate limit per project (e.g., max 10 emails/hour).
 
-### 7.3 Notification Preferences
+### 7.4 Notification Preferences
 
 Users can configure per-project:
 - Receive in-app only / email only / both / none
@@ -826,8 +896,9 @@ ADMIN_NAME=Admin
 | **Phase 1 — Foundation** ✅ | Project scaffold, Docker setup, Makefile, DB models (8), auth (login/signup/invite), user CRUD, role middleware, auto-migration, auto-seed, structured logging, CyberPunk CSS design system, frontend shell (all pages scaffolded) | 2 weeks |
 | **Phase 2 — Core** ✅ | Project CRUD (8 endpoints), Sentry ingest (`/store/` + `/envelope/`), event processing (fingerprinting, dedup, regression), issue management (5 endpoints), API token management (create/list/revoke with `mgb_` prefix), Sentry-compatible REST API (`/api/0/` — 14 endpoints), dashboard stats API, dual auth (Cookie JWT + Bearer token), CORS env config, `make help`, frontend wired to live API (removed all hardcoded placeholder data) | 3 weeks |
 | **Phase 3 — Frontend** ✅ | Auth-guarded dashboard layout, functional sidebar (live user, logout), create project modal with DSN display, project detail page (overview/issues/settings tabs, 14-day trend chart, inline resolve/ignore), issue detail page (stack trace viewer, events timeline, metadata/tags), settings with 4 tabs (General, SMTP, Profile with save, API Keys with full CRUD), clickable dashboard linking to detail pages, +370 lines of new CSS (modal, tabs, breadcrumbs, stack trace, trend chart, copy button, empty states) | 3 weeks |
-| **Phase 4 — Notifications** ✅ | Backend notification API (list, unread count, mark read, mark all read), notification dispatch on new issue/regression (via ingest service → ProjectMember fan-out), NotificationBell component with 30s polling + dropdown + mark read, invite user modal (email + role → shareable link with copy), users page with inline role change + enable/disable toggle, SMTP settings persistence via Settings API (load/save JSONB), general settings persistence, `PUT` method added to frontend API client | 2 weeks |
+| **Phase 4 — Notifications** ✅ | Backend notification API (list, unread count, mark read, mark all read), notification dispatch on new issue/regression (via ingest service → ProjectMember fan-out), NotificationBell component with **WebSocket real-time push** + 30s polling fallback + dropdown + mark read, invite user modal (email + role → shareable link with copy), users page with inline role change + enable/disable toggle, SMTP settings persistence via Settings API (load/save JSONB), general settings persistence, `PUT` method added to frontend API client | 2 weeks |
 | **Phase 5 — Polish** ✅ | Page transition animation (fadeIn + translateY), button micro-animations (active scale), notification dropdown slide animation, comprehensive responsive breakpoints (1024px tablet, 767px mobile, 480px small mobile), mobile-optimized tables/modals/DSN display, global search command palette (⌘K) with Meilisearch multi_search (issues + projects), keyboard navigation (↑↓ + Enter), print stylesheet, `.badge-success` utility, scrollable tabs on mobile | 1 week |
+| **Phase 5.5 — Real-Time** ✅ | WebSocket endpoint (`/ws/notifications`) with JWT cookie auth, Redis pub/sub infrastructure (3 channel tiers: user/project/global), `WebSocketProvider` React context, `useWS()` hook with auto-reconnect + exponential backoff, real-time updates on dashboard (live stat counters + issue table), projects page (live unresolved badge), project detail (live issue list with prepend/update), notification bell (instant push), Sentry envelope ingestion hardening (gzip, length-prefixed items, DSN from envelope headers), unresolved issue count badge on project cards | 1 week |
 | **Phase 6 — Release** | Documentation, README, contributing guide, CI/CD, initial release | 1 week |
 
 ---

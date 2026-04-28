@@ -27,6 +27,12 @@ except Exception:
 
 logger = get_logger("services.ingest")
 
+try:
+    from app.services.pubsub import publish_to_user, publish_to_project, publish_global
+    _HAS_PUBSUB = True
+except Exception:
+    _HAS_PUBSUB = False
+
 # Regex to extract DSN public key from X-Sentry-Auth header
 # Format: Sentry sentry_key=<key>, sentry_version=7, ...
 _SENTRY_AUTH_RE = re.compile(r"sentry_key=([a-f0-9]+)")
@@ -404,6 +410,37 @@ async def process_event(
         except Exception as e:
             logger.warning("Failed to dispatch indexing tasks: %s", e)
 
+    # ── Real-time WebSocket broadcasts ──
+    if _HAS_PUBSUB:
+        try:
+            issue_payload = {
+                "id": str(issue.id),
+                "title": issue.title,
+                "status": issue.status.value,
+                "level": issue.level.value,
+                "event_count": issue.event_count,
+                "last_seen": issue.last_seen.isoformat() if issue.last_seen else "",
+                "first_seen": issue.first_seen.isoformat() if issue.first_seen else "",
+            }
+            # Per-project event
+            await publish_to_project(str(project.id), {
+                "type": "new_event",
+                "project_id": str(project.id),
+                "project_slug": project.slug,
+                "issue": issue_payload,
+                "is_new_issue": is_new,
+                "is_regression": is_regression,
+            })
+            # Global stats bump
+            await publish_global({
+                "type": "stats_update",
+                "project_id": str(project.id),
+                "unresolved_delta": 1 if (is_new or is_regression) else 0,
+                "errors_24h_delta": 1,
+            })
+        except Exception as e:
+            logger.warning("Failed to publish real-time events: %s", e)
+
     return issue, event
 
 
@@ -486,6 +523,25 @@ async def _create_notifications(
             db.add(notification)
 
         await db.flush()
+
+        # Publish real-time notification to each user via WebSocket
+        if _HAS_PUBSUB:
+            for user_id in members_user_ids:
+                try:
+                    await publish_to_user(str(user_id), {
+                        "type": "new_notification",
+                        "notification": {
+                            "type": notification_type.value,
+                            "title": f"{type_label} in {project.name}",
+                            "body": issue.title[:300],
+                            "issue_id": str(issue.id),
+                            "project_id": str(project.id),
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                        },
+                    })
+                except Exception:
+                    pass
+
         logger.debug(
             "Created %d notifications for %s (project=%s, issue=%s)",
             len(members_user_ids), notification_type.value, project.slug, issue.id,

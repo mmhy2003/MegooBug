@@ -5,6 +5,7 @@ import Link from "next/link";
 import { FolderKanban, Plus, Loader2, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { CreateProjectModal } from "@/components/create-project-modal";
+import { useWS } from "@/components/websocket-provider";
 
 interface Project {
   id: string;
@@ -21,6 +22,7 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const { lastMessage } = useWS();
 
   async function loadProjects() {
     try {
@@ -36,6 +38,20 @@ export default function ProjectsPage() {
   useEffect(() => {
     loadProjects();
   }, []);
+
+  // Real-time: increment unresolved_count on project card when new issue arrives
+  useEffect(() => {
+    if (!lastMessage) return;
+    if (lastMessage.type === "stats_update" && lastMessage.project_id && lastMessage.unresolved_delta > 0) {
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === lastMessage.project_id
+            ? { ...p, unresolved_count: p.unresolved_count + lastMessage.unresolved_delta }
+            : p
+        )
+      );
+    }
+  }, [lastMessage]);
 
   function formatRelativeTime(isoString: string) {
     if (!isoString) return "—";

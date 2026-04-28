@@ -7,8 +7,10 @@ from app.config import settings
 from app.api.v1 import router as api_v1_router
 from app.api.ingest import router as ingest_router
 from app.api.sentry_compat import router as sentry_compat_router
+from app.api.websocket import router as ws_router
 from app.database import engine, Base
 from app.logging import setup_logging, get_logger
+from app.services.pubsub import init_redis, close_redis
 
 # Initialize logging before anything else
 setup_logging()
@@ -68,10 +70,12 @@ async def lifespan(app: FastAPI):
 
     await _auto_migrate()
     await _auto_seed()
+    await init_redis()
 
     logger.info("%s ready to accept connections", settings.APP_NAME)
     yield
 
+    await close_redis()
     await engine.dispose()
     logger.info("%s shut down", settings.APP_NAME)
 
@@ -99,6 +103,7 @@ app.add_middleware(
 app.include_router(api_v1_router)
 app.include_router(ingest_router, prefix="/api")       # Sentry ingest: /api/{project_id}/store/
 app.include_router(sentry_compat_router)                # Sentry compat: /api/0/...
+app.include_router(ws_router)                           # WebSocket: /ws/notifications
 
 
 @app.get("/api/health")
