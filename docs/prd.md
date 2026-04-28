@@ -252,54 +252,61 @@ Running `make` (with no arguments) prints all available commands.
 └─────────────────────────────────────────────────┘
 ```
 
-- **Left Sidebar Navbar** — Collapsible (icon-only mode). Contains: logo, Dashboard, Projects, Users (admin only), Settings, theme toggle, user avatar/logout.
-- **Header Bar** — Global search, notification bell (badge count), user dropdown.
+- **Left Sidebar Navbar** — Collapsible (icon-only mode). Contains: logo, Dashboard, Projects, Users (admin only), Settings, theme toggle, user avatar/logout. ✅ Fetches live user from `GET /users/me`; functional logout via `POST /auth/logout`.
+- **Header Bar** — Global search, notification bell (ready for Phase 4), user avatar initial from live user data.
+- **Auth Guard** — Dashboard layout fetches current user on mount; redirects to `/login` on 401. All dashboard pages are protected.
 - **Mobile** — Navbar becomes a hamburger drawer overlay.
 
-### 6.2 Dashboard (`/dashboard`)
+### 6.2 Dashboard (`/dashboard`) ✅
 
-| Card | Data |
-|------|------|
-| Total Projects | Count of all projects |
-| Total Errors (24h) | Errors received in last 24 hours |
-| Unresolved Issues | Open issue count |
-| Active Users | Users who triggered events today |
+| Card | Data | Links to |
+|------|------|----------|
+| Total Projects | Count of all projects | `/projects` |
+| Total Errors (24h) | Events received in last 24 hours | — |
+| Unresolved Issues | Open issue count | — |
+| Active Users | Active user count | `/users` |
 
 Additional sections:
-- **Error Trend Chart** — Line/area chart showing errors over time (7d/30d toggle).
-- **Recent Issues** — Table of latest 10 issues with severity, project, timestamp.
-- **Top Projects by Errors** — Bar chart of most-errored projects.
+- **Recent Unresolved Issues** — Table of latest 10 unresolved issues across all projects, with clickable rows linking to issue detail.
+- Project names resolved from a project map lookup.
 
-### 6.3 Projects (`/projects`)
+### 6.3 Projects (`/projects`) ✅
 
 **List View:**
-- Cards/table showing: project name, platform icon, DSN (masked), error count, last event time.
-- Create Project button (Admin/Developer).
+- Project cards showing: name, platform/slug, creation time. Clickable → project detail.
+- **Create Project** button → glassmorphism modal: name (required) + platform (select). On success: shows DSN with copy button.
+- Empty state with CTA when no projects exist.
 
-**Project Detail (`/projects/:slug`):**
-- **Overview** tab — Stats, error trend, DSN display with copy button.
-- **Issues** tab — Filterable/sortable list of grouped issues (status, severity, first/last seen, count).
-- **Issue Detail (`/projects/:slug/issues/:id`)** — Full stack trace, breadcrumbs, tags, environment, browser/OS info, event timeline, resolve/ignore actions.
-- **Settings** tab — Rename, delete, manage notification subscribers.
-- **Members** tab — Users assigned to this project (for notification routing).
+**Project Detail (`/projects/:slug`):** ✅
+- Breadcrumb navigation: Projects → Project Name.
+- **Overview** tab — Client DSN with copy button, public key display, 14-day error trend bar chart (CSS-only, no external chart library), project metadata (slug, platform, created).
+- **Issues** tab — Filterable by status (All / Unresolved / Resolved / Ignored). Table with level badge, event count, status dot, last seen, and inline Resolve / Ignore / Unresolve action buttons.
+- **Settings** tab — Edit name/platform with save, Danger Zone with delete confirmation dialog.
 
-### 6.4 Users (`/users`) — Admin Only
+**Issue Detail (`/projects/:slug/issues/:id`):** ✅
+- Issue header: title, level badge, status badge, event count, first/last seen timestamps.
+- Action buttons: Resolve, Unresolve, Ignore (calls `PATCH /issues/{id}`).
+- **Stack Trace** tab — Renders `exception.values[]` from latest event data. Shows exception type (red) + value, frames in reverse order with filename, function, line/col number.
+- **Events** tab — Table of all events for the issue with event ID, timestamp, received time.
+- **Details** tab — Issue ID, fingerprint, timestamps, event count, tags (if present), SDK info.
 
-- Table: avatar, name, email, role, status (active/invited/disabled), joined date.
-- Actions: change role, disable/enable, remove.
-- **Invite User** button → modal with email + role selector.
+### 6.4 Users (`/users`) — Admin Only ✅
 
-### 6.5 Settings (`/settings`)
+- Table: avatar initial, name, email, role badge, status badge (active/disabled), joined date.
+- Actions: Edit button (placeholder for Phase 4).
+- **Invite User** button (placeholder for Phase 4 — invite modal).
+- Fetches from `GET /api/v1/users` (returns `{ users: [...], total }`).
 
-Tabs:
+### 6.5 Settings (`/settings`) ✅
 
-| Tab | Contents |
-|-----|----------|
-| **General** | Instance name, URL, signup toggle |
-| **Email / SMTP** | SMTP host, port, encryption, username, password, from address, test button |
-| **Notifications** | Default notification rules (e.g., notify on first occurrence, every Nth, regression) |
-| **Profile** | Current user's name, email, password change, avatar |
-| **API Keys** | Create/revoke personal API tokens for Sentry CLI, MCP, and external integrations. Table: name, token prefix, last used, created, expiry, revoke button. |
+Tab-based layout with active tab highlighting:
+
+| Tab | Contents | Status |
+|-----|----------|--------|
+| **General** | Instance name, URL fields | UI ready |
+| **Email / SMTP** | SMTP host, port, username, password, from email, test button, save button | UI ready |
+| **Profile** | Name + email fields, fetched from `GET /users/me`, saved via `PATCH /users/me` with success/error feedback | ✅ Functional |
+| **API Keys** | Table: name, token prefix (`mgb_...••••`), last used, created, expires, revoke button. **Create Token** modal with name + optional expiry. Raw token shown **once** with copy button + security warning. | ✅ Functional |
 
 ---
 
@@ -818,9 +825,9 @@ ADMIN_NAME=Admin
 |-------|-------|---------------|
 | **Phase 1 — Foundation** ✅ | Project scaffold, Docker setup, Makefile, DB models (8), auth (login/signup/invite), user CRUD, role middleware, auto-migration, auto-seed, structured logging, CyberPunk CSS design system, frontend shell (all pages scaffolded) | 2 weeks |
 | **Phase 2 — Core** ✅ | Project CRUD (8 endpoints), Sentry ingest (`/store/` + `/envelope/`), event processing (fingerprinting, dedup, regression), issue management (5 endpoints), API token management (create/list/revoke with `mgb_` prefix), Sentry-compatible REST API (`/api/0/` — 14 endpoints), dashboard stats API, dual auth (Cookie JWT + Bearer token), CORS env config, `make help`, frontend wired to live API (removed all hardcoded placeholder data) | 3 weeks |
-| **Phase 3 — Frontend** | Project detail with issues, issue detail with stack traces, create project modal, error trend charts, notification bell integration | 3 weeks |
-| **Phase 4 — Notifications** | WebSocket setup, in-app notification bell, email notifications, SMTP settings UI, notification preferences | 2 weeks |
-| **Phase 5 — Polish** | CyberPunk theme finalization, responsive testing, dark/light/system, animations, performance optimization | 1 week |
+| **Phase 3 — Frontend** ✅ | Auth-guarded dashboard layout, functional sidebar (live user, logout), create project modal with DSN display, project detail page (overview/issues/settings tabs, 14-day trend chart, inline resolve/ignore), issue detail page (stack trace viewer, events timeline, metadata/tags), settings with 4 tabs (General, SMTP, Profile with save, API Keys with full CRUD), clickable dashboard linking to detail pages, +370 lines of new CSS (modal, tabs, breadcrumbs, stack trace, trend chart, copy button, empty states) | 3 weeks |
+| **Phase 4 — Notifications** | WebSocket setup, in-app notification bell with live badge count, email notifications via Celery + SMTP, SMTP settings persistence, notification preferences per-project, invite user modal | 2 weeks |
+| **Phase 5 — Polish** | CyberPunk theme finalization, responsive testing, dark/light/system, animations, performance optimization, global search (Meilisearch) | 1 week |
 | **Phase 6 — Release** | Documentation, README, contributing guide, CI/CD, initial release | 1 week |
 
 ---
