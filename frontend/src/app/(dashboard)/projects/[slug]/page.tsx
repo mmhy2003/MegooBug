@@ -463,13 +463,26 @@ export default function ProjectDetailPage({
               </div>
               <div className="form-group">
                 <label htmlFor="edit-platform" className="label">Platform</label>
-                <input
+                <select
                   id="edit-platform"
                   className="input"
                   value={editPlatform}
                   onChange={(e) => setEditPlatform(e.target.value)}
-                  placeholder="e.g. javascript, python"
-                />
+                >
+                  <option value="">None</option>
+                  <option value="javascript">JavaScript</option>
+                  <option value="typescript">TypeScript</option>
+                  <option value="python">Python</option>
+                  <option value="go">Go</option>
+                  <option value="java">Java</option>
+                  <option value="csharp">C#</option>
+                  <option value="ruby">Ruby</option>
+                  <option value="php">PHP</option>
+                  <option value="rust">Rust</option>
+                  <option value="react-native">React Native</option>
+                  <option value="flutter">Flutter</option>
+                  <option value="other">Other</option>
+                </select>
               </div>
             </div>
             <div style={{ marginTop: "1rem" }}>
