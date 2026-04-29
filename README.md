@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # 🐛 MegooBug
 
@@ -371,4 +371,3 @@ MegooBug is open-source software licensed under the [MIT License](LICENSE).
 [Documentation](docs/prd.md) · [Report Bug](../../issues) · [Request Feature](../../issues)
 
 </div>
-]]>
