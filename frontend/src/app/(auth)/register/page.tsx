@@ -23,7 +23,6 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [mounted, setMounted] = useState(false);
 
   // Invite info (pre-filled)
   const [inviteEmail, setInviteEmail] = useState("");
@@ -31,9 +30,6 @@ export default function RegisterPage() {
   const [validating, setValidating] = useState(true);
   const [invalidToken, setInvalidToken] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   // Validate the invite token on mount
   useEffect(() => {
@@ -80,7 +76,6 @@ export default function RegisterPage() {
     }
   }
 
-  if (!mounted) return null;
 
   if (validating) {
     return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bug, Eye, EyeOff } from "lucide-react";
@@ -14,11 +14,6 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -78,8 +73,7 @@ export default function LoginPage() {
 
         {error && <div className="auth-error">{error}</div>}
 
-        {mounted && (
-          <form className="auth-form" onSubmit={handleSubmit}>
+        <form className="auth-form" onSubmit={handleSubmit}>
             <div className="form-group">
               <label htmlFor="login-email" className="label">
                 Email
@@ -141,8 +135,7 @@ export default function LoginPage() {
             >
               {loading ? "Signing in..." : "Sign In"}
             </button>
-          </form>
-        )}
+        </form>
 
         <div className="auth-footer">
           Don&apos;t have an account?{" "}
