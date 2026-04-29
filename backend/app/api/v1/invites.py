@@ -12,6 +12,7 @@ from app.models.invite import Invite
 from app.models.user import User
 from app.schemas.invite import InviteCreate, InviteListResponse, InviteResponse
 from app.services.auth import create_invite_token
+from app.services.email import send_invite_email
 
 router = APIRouter()
 
@@ -23,7 +24,8 @@ async def create_invite(
     db: AsyncSession = Depends(get_db),
 ):
     """Create an invite link for a new user (admin only).
-    If a pending invite already exists for this email, it is replaced."""
+    If a pending invite already exists for this email, it is replaced.
+    An invite email is sent to the user."""
     # Check if email is already registered
     result = await db.execute(select(User).where(User.email == data.email))
     if result.scalar_one_or_none() is not None:
@@ -55,6 +57,15 @@ async def create_invite(
     db.add(invite)
     await db.flush()
     await db.refresh(invite)
+
+    # Send invite email (fire-and-forget — don't fail the invite if email fails)
+    await send_invite_email(
+        db=db,
+        to_email=data.email,
+        invite_token=invite.token,
+        role=data.role.value if hasattr(data.role, 'value') else str(data.role),
+        invited_by_name=current_user.name,
+    )
 
     return invite
 
