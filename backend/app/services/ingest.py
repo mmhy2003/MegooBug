@@ -495,26 +495,36 @@ async def _create_notifications(
     issue: Issue,
     notification_type: NotificationType,
 ) -> None:
-    """Create in-app notifications for all project members."""
+    """Create in-app notifications and send email alerts for project members."""
     try:
-        # Get all project members who have notify_inapp enabled
+        from app.models.user import User
+
+        # Get all project members who have notify_inapp OR notify_email enabled
         result = await db.execute(
             select(ProjectMember).where(
                 ProjectMember.project_id == project.id,
-                ProjectMember.notify_inapp == True,
             )
         )
         members = result.scalars().all()
 
-        if not members:
-            # Fallback: notify the project creator
-            members_user_ids = [project.created_by]
-        else:
-            members_user_ids = [m.user_id for m in members]
-
         type_label = "New issue" if notification_type == NotificationType.NEW_ISSUE else "Regression"
 
-        for user_id in members_user_ids:
+        # Separate lists for in-app and email notifications
+        inapp_user_ids = []
+        email_user_ids = []
+
+        if members:
+            for m in members:
+                if m.notify_inapp:
+                    inapp_user_ids.append(m.user_id)
+                if m.notify_email:
+                    email_user_ids.append(m.user_id)
+        else:
+            # Fallback: notify the project creator via in-app
+            inapp_user_ids = [project.created_by]
+
+        # ── In-app notifications ──
+        for user_id in inapp_user_ids:
             notification = Notification(
                 user_id=user_id,
                 issue_id=issue.id,
@@ -529,7 +539,7 @@ async def _create_notifications(
 
         # Publish real-time notification to each user via WebSocket
         if _HAS_PUBSUB:
-            for user_id in members_user_ids:
+            for user_id in inapp_user_ids:
                 try:
                     await publish_to_user(str(user_id), {
                         "type": "new_notification",
@@ -545,9 +555,53 @@ async def _create_notifications(
                 except Exception:
                     pass
 
+        # ── Email notifications (fire-and-forget) ──
+        if email_user_ids:
+            try:
+                from app.services.email import send_issue_notification_email
+
+                # Fetch user emails
+                user_result = await db.execute(
+                    select(User.id, User.email).where(User.id.in_(email_user_ids))
+                )
+                user_emails = {row[0]: row[1] for row in user_result.all()}
+
+                # Extract environment from issue metadata
+                environment = ""
+                if issue.metadata_ and isinstance(issue.metadata_, dict):
+                    environment = issue.metadata_.get("environment", "")
+
+                is_regression = notification_type == NotificationType.REGRESSION
+
+                for user_id in email_user_ids:
+                    email_addr = user_emails.get(user_id)
+                    if not email_addr:
+                        continue
+                    try:
+                        await send_issue_notification_email(
+                            db=db,
+                            to_email=email_addr,
+                            project_name=project.name,
+                            project_slug=project.slug,
+                            issue_id=str(issue.id),
+                            issue_title=issue.title,
+                            issue_level=issue.level.value,
+                            is_regression=is_regression,
+                            event_count=issue.event_count,
+                            environment=environment,
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to send issue email to %s: %s", email_addr, e
+                        )
+            except Exception as e:
+                logger.warning("Failed to dispatch issue emails: %s", e)
+
         logger.debug(
-            "Created %d notifications for %s (project=%s, issue=%s)",
-            len(members_user_ids), notification_type.value, project.slug, issue.id,
+            "Created %d in-app + %d email notifications for %s (project=%s, issue=%s)",
+            len(inapp_user_ids), len(email_user_ids),
+            notification_type.value, project.slug, issue.id,
         )
     except Exception as e:
         logger.error("Failed to create notifications: %s", e)
+

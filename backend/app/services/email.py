@@ -337,3 +337,279 @@ async def send_invite_email(
     except Exception as e:
         logger.error("Failed to send invite email to %s: %s", to_email, e)
         return False
+
+
+# ── Issue Notification Email ──
+
+
+_LEVEL_COLORS = {
+    "fatal": ("#ff3366", "rgba(255,51,102,0.1)", "rgba(255,51,102,0.25)"),
+    "error": ("#ff3366", "rgba(255,51,102,0.1)", "rgba(255,51,102,0.25)"),
+    "warning": ("#ffcc00", "rgba(255,204,0,0.1)", "rgba(255,204,0,0.25)"),
+    "info": ("#00f0ff", "rgba(0,240,255,0.1)", "rgba(0,240,255,0.25)"),
+}
+
+
+def _build_issue_notification_html(
+    app_name: str,
+    project_name: str,
+    issue_title: str,
+    issue_level: str,
+    issue_link: str,
+    is_regression: bool,
+    event_count: int,
+    environment: str,
+) -> str:
+    """Build a premium HTML issue notification email matching the CyberPunk design system."""
+    color, bg, border = _LEVEL_COLORS.get(issue_level, _LEVEL_COLORS["error"])
+    type_label = "Regression" if is_regression else "New Issue"
+    type_emoji = "🔄" if is_regression else "🚨"
+    # Truncate title for email display
+    display_title = issue_title[:200] + ("…" if len(issue_title) > 200 else "")
+    env_row = ""
+    if environment:
+        env_row = f"""
+                                        <tr>
+                                            <td style="padding:6px 0; font-family:'Inter',sans-serif; font-size:13px; color:#555570; width:110px;">Environment</td>
+                                            <td style="padding:6px 0; font-family:'JetBrains Mono',monospace; font-size:13px; color:#e0e0ff;">{environment}</td>
+                                        </tr>"""
+
+    return f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>{type_label} in {project_name}</title>
+    <!--[if mso]>
+    <noscript><xml>
+    <o:OfficeDocumentSettings>
+    <o:PixelsPerInch>96</o:PixelsPerInch>
+    </o:OfficeDocumentSettings>
+    </xml></noscript>
+    <![endif]-->
+</head>
+<body style="margin:0; padding:0; background-color:#0a0a0f; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="background-color:#0a0a0f; padding:32px 16px;">
+        <tr>
+            <td align="center">
+                <!-- Main card -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                       style="max-width:580px; background-color:#1a1a2e; border-radius:16px; border:1px solid #2a2a3e; box-shadow:0 8px 40px rgba(0,0,0,0.5); overflow:hidden;">
+
+                    <!-- ═══ Header ═══ -->
+                    <tr>
+                        <td style="padding:32px 40px 24px; text-align:center; background:linear-gradient(180deg, {bg} 0%, transparent 100%); border-bottom:1px solid #2a2a3e;">
+                            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;">
+                                <tr>
+                                    <td style="vertical-align:middle; padding-right:12px;">
+                                        <img src="{LOGO_DATA_URI}" alt="{app_name}" width="48" height="48"
+                                             style="display:block; border:0; outline:none;">
+                                    </td>
+                                    <td style="vertical-align:middle;">
+                                        <span style="font-family:'Outfit','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; font-size:26px; font-weight:700; color:#00f0ff; letter-spacing:0.5px; text-shadow:0 0 20px rgba(0,240,255,0.3);">
+                                            {app_name}
+                                        </span>
+                                    </td>
+                                </tr>
+                            </table>
+                            <p style="margin:12px 0 0; font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif; font-size:13px; color:#555570; letter-spacing:1.5px; text-transform:uppercase;">
+                                {type_emoji} {type_label} Detected
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- ═══ Body ═══ -->
+                    <tr>
+                        <td style="padding:36px 40px 32px;">
+                            <!-- Project badge -->
+                            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
+                                <tr>
+                                    <td>
+                                        <span style="display:inline-block; font-family:'Inter',sans-serif; background:rgba(0,240,255,0.08); color:#00f0ff; padding:4px 14px; border-radius:6px; font-size:12px; font-weight:600; border:1px solid rgba(0,240,255,0.15); letter-spacing:0.3px;">
+                                            {project_name}
+                                        </span>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Issue title card -->
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                                   style="background:#12121a; border:1px solid {border}; border-left:4px solid {color}; border-radius:10px; margin-bottom:24px;">
+                                <tr>
+                                    <td style="padding:20px 24px;">
+                                        <!-- Level badge -->
+                                        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:12px;">
+                                            <tr>
+                                                <td>
+                                                    <span style="display:inline-block; font-family:'JetBrains Mono',monospace; background:{bg}; color:{color}; padding:3px 12px; border-radius:6px; font-size:11px; font-weight:700; border:1px solid {border}; text-transform:uppercase; letter-spacing:1px;">
+                                                        {issue_level}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                        <!-- Title -->
+                                        <p style="margin:0; font-family:'JetBrains Mono','Fira Code',monospace; font-size:14px; color:#e0e0ff; line-height:1.6; word-break:break-word;">
+                                            {display_title}
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Details table -->
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                                   style="background:#12121a; border:1px solid #2a2a3e; border-radius:10px; margin-bottom:28px;">
+                                <tr>
+                                    <td style="padding:16px 24px;">
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                                            <tr>
+                                                <td style="padding:6px 0; font-family:'Inter',sans-serif; font-size:13px; color:#555570; width:110px;">Project</td>
+                                                <td style="padding:6px 0; font-family:'Inter',sans-serif; font-size:13px; color:#e0e0ff; font-weight:600;">{project_name}</td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding:6px 0; font-family:'Inter',sans-serif; font-size:13px; color:#555570;">Events</td>
+                                                <td style="padding:6px 0; font-family:'JetBrains Mono',monospace; font-size:13px; color:#e0e0ff;">{event_count}</td>
+                                            </tr>{env_row}
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- CTA Button -->
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                                <tr>
+                                    <td align="center" style="padding:4px 0 16px;">
+                                        <!--[if mso]>
+                                        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                                                     href="{issue_link}" style="height:52px;v-text-anchor:middle;width:280px;"
+                                                     arcsize="15%" strokecolor="#0088cc" fillcolor="#00d4ff">
+                                        <w:anchorlock/>
+                                        <center style="color:#0a0a0f;font-family:sans-serif;font-size:15px;font-weight:bold;">
+                                            View Issue Details
+                                        </center>
+                                        </v:roundrect>
+                                        <![endif]-->
+                                        <!--[if !mso]><!-->
+                                        <a href="{issue_link}"
+                                           style="display:inline-block; padding:15px 40px; background:linear-gradient(135deg, #00f0ff 0%, #0088cc 100%); color:#0a0a0f; font-family:'Outfit','Inter',-apple-system,BlinkMacSystemFont,sans-serif; font-size:15px; font-weight:700; text-decoration:none; border-radius:10px; letter-spacing:0.3px; box-shadow:0 4px 20px rgba(0,240,255,0.35);">
+                                            View Issue Details →
+                                        </a>
+                                        <!--<![endif]-->
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Fallback link -->
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                                   style="background:#0a0a0f; border:1px solid #2a2a3e; border-radius:8px;">
+                                <tr>
+                                    <td style="padding:14px 18px;">
+                                        <p style="margin:0 0 6px; font-family:'Inter',sans-serif; font-size:11px; color:#555570; text-transform:uppercase; letter-spacing:0.8px;">
+                                            Or open in browser:
+                                        </p>
+                                        <p style="margin:0; font-family:'JetBrains Mono','Fira Code',monospace; font-size:12px; color:#00f0ff; word-break:break-all; line-height:1.6;">
+                                            {issue_link}
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- ═══ Divider ═══ -->
+                    <tr>
+                        <td style="padding:0 40px;">
+                            <div style="height:1px; background:linear-gradient(90deg, transparent, #2a2a3e, rgba(0,240,255,0.15), #2a2a3e, transparent);"></div>
+                        </td>
+                    </tr>
+
+                    <!-- ═══ Footer ═══ -->
+                    <tr>
+                        <td style="padding:24px 40px 32px; text-align:center;">
+                            <p style="margin:0 0 8px; font-family:'Inter',sans-serif; font-size:12px; color:#555570; line-height:1.6;">
+                                You're receiving this because you're a member of <strong style="color:#8888aa;">{project_name}</strong>.
+                            </p>
+                            <p style="margin:0; font-family:'Inter',sans-serif; font-size:11px; color:#3a3a50;">
+                                Sent by <span style="color:#555570;">{app_name}</span> · Self-hosted error tracking
+                            </p>
+                        </td>
+                    </tr>
+
+                </table>
+
+                <!-- Sub-footer -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:580px;">
+                    <tr>
+                        <td style="padding:20px 40px; text-align:center;">
+                            <p style="margin:0; font-family:'JetBrains Mono',monospace; font-size:10px; color:#3a3a50; letter-spacing:1px;">
+                                POWERED BY {app_name.upper()}
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+
+            </td>
+        </tr>
+    </table>
+</body>
+</html>"""
+
+
+async def send_issue_notification_email(
+    db: AsyncSession,
+    to_email: str,
+    project_name: str,
+    project_slug: str,
+    issue_id: str,
+    issue_title: str,
+    issue_level: str,
+    is_regression: bool = False,
+    event_count: int = 1,
+    environment: str = "",
+):
+    """Send an issue notification email to a project member."""
+    cfg = await _get_smtp_config(db)
+    if cfg is None:
+        logger.debug("Cannot send issue email — SMTP not configured")
+        return False
+
+    app_url = app_settings.APP_URL.rstrip("/")
+    app_name = app_settings.APP_NAME
+    issue_link = f"{app_url}/projects/{project_slug}/issues/{issue_id}"
+    type_label = "Regression" if is_regression else "New Issue"
+
+    subject = f"[{project_name}] {type_label}: {issue_title[:100]}"
+
+    text_body = (
+        f"{type_label} in {project_name}\n\n"
+        f"Level: {issue_level.upper()}\n"
+        f"Title: {issue_title}\n"
+        f"Events: {event_count}\n"
+        + (f"Environment: {environment}\n" if environment else "")
+        + f"\nView issue: {issue_link}\n\n"
+        f"— {app_name}"
+    )
+
+    html_body = _build_issue_notification_html(
+        app_name=app_name,
+        project_name=project_name,
+        issue_title=issue_title,
+        issue_level=issue_level,
+        issue_link=issue_link,
+        is_regression=is_regression,
+        event_count=event_count,
+        environment=environment,
+    )
+
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _send, cfg, to_email, subject, html_body, text_body)
+        logger.info("Issue notification email sent to %s (issue=%s)", to_email, issue_id[:8])
+        return True
+    except Exception as e:
+        logger.error("Failed to send issue notification email to %s: %s", to_email, e)
+        return False
+
