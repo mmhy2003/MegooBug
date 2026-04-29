@@ -11,6 +11,15 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# Next.js inlines NEXT_PUBLIC_* at build time – must be present as build args
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_WS_URL
+ARG NEXT_PUBLIC_SITE_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
+ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
+
 RUN npm run build
 
 # ── Stage 3: Runner ──

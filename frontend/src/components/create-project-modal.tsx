@@ -2,7 +2,7 @@
 
 import { useState, FormEvent } from "react";
 import { X, Copy, Check } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, API_URL } from "@/lib/api";
 
 interface Project {
   id: string;
@@ -68,7 +68,7 @@ export function CreateProjectModal({ onClose, onCreated }: Props) {
 
   function getDSN() {
     if (!created) return "";
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const apiUrl = API_URL;
     // Parse the host from the API URL to build the Sentry DSN format:
     // <protocol>://<public_key>@<host>/api/<project_id>
     try {

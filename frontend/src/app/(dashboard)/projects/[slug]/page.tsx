@@ -7,7 +7,7 @@ import {
   ChevronRight, Copy, Check, Loader2, Trash2,
   FolderKanban, AlertTriangle, UserPlus, Users,
 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, API_URL } from "@/lib/api";
 import { useWS } from "@/components/websocket-provider";
 
 interface Project {
@@ -212,7 +212,7 @@ export default function ProjectDetailPage({
 
   function getFullDSN() {
     if (!project) return "";
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const apiUrl = API_URL;
     try {
       const url = new URL(apiUrl);
       return `${url.protocol}//${project.dsn_public_key}@${url.host}/${project.project_number}`;
@@ -338,7 +338,7 @@ export default function ProjectDetailPage({
   if (!project) return null;
 
   const maxTrend = Math.max(...trend.map((t) => t.count), 1);
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiUrl = API_URL;
 
   return (
     <div>
