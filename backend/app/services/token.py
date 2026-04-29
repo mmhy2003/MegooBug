@@ -1,13 +1,11 @@
 import secrets
 from datetime import datetime, timezone
 
-from passlib.context import CryptContext
+import bcrypt
 
 from app.logging import get_logger
 
 logger = get_logger("services.token")
-
-_token_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 TOKEN_PREFIX = "mgb_"
 
@@ -22,14 +20,14 @@ def generate_api_token() -> tuple[str, str, str]:
     random_part = secrets.token_hex(32)  # 64 hex chars
     raw_token = f"{TOKEN_PREFIX}{random_part}"
     prefix = raw_token[:12]  # "mgb_" + first 8 hex chars
-    token_hash = _token_ctx.hash(raw_token)
+    token_hash = bcrypt.hashpw(raw_token.encode(), bcrypt.gensalt()).decode()
     return raw_token, prefix, token_hash
 
 
 def verify_api_token(raw_token: str, token_hash: str) -> bool:
     """Verify a raw API token against a stored hash."""
     try:
-        return _token_ctx.verify(raw_token, token_hash)
+        return bcrypt.checkpw(raw_token.encode(), token_hash.encode())
     except Exception:
         return False
 
