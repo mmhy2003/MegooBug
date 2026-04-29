@@ -1,6 +1,6 @@
 # MegooBug — Product Requirements Document
 
-> **Version:** 1.1 · **Date:** 2026-04-29 · **Status:** Draft · **License:** MIT (Open Source)
+> **Version:** 1.2 · **Date:** 2026-04-29 · **Status:** Draft · **License:** MIT (Open Source)
 
 ---
 
@@ -311,7 +311,8 @@ Running `make` (with no arguments) prints all available commands.
 
 - **Left Sidebar Navbar** — Collapsible (icon-only mode). Contains: logo, Dashboard, Projects, Users (admin only), Settings, user avatar/logout. ✅ Fetches live user from `GET /users/me`; functional logout via `POST /auth/logout`.
 - **Header Bar** — Global search (⌘K), theme toggle (light/dark/system), notification bell with live badge, user avatar initial from live user data.
-- **Auth Guard** — Dashboard layout fetches current user on mount; redirects to `/login` on 401. All dashboard pages are protected.
+- **Auth Guard** — Dashboard layout fetches current user on mount; redirects to `/login?redirect=<current_path>` on 401. All dashboard pages are protected.
+- **Login Redirect** — Login page reads `?redirect=` query parameter and navigates to that path after successful authentication (defaults to `/dashboard`). This preserves the user's intended destination across auth flows, including session expiry (API client 401 handler) and direct URL access.
 - **Mobile** — Navbar becomes a hamburger drawer overlay.
 
 ### 6.2 Dashboard (`/dashboard`) ✅
@@ -344,14 +345,22 @@ Additional sections:
 - **Settings** tab — Edit name/platform with save. **Members section** — list of current members (name, email, role badge) with remove button (admin only); "Add Member" panel showing unassigned users with add button (admin only). Danger Zone with delete confirmation dialog.
 
 **Issue Detail (`/projects/:slug/issues/:id`):** ✅
-- Issue header: title, level badge, status badge, event count, first/last seen timestamps.
-- Action buttons: Resolve, Unresolve, Ignore (calls `PATCH /issues/{id}`).
-- **Stack Trace** tab — Renders `exception.values[]` from latest event data. Shows exception type (red) + value, frames in reverse order with filename, function, line/col number.
+- Issue header: title (expandable for long titles), level badge, status badge, event count, first/last seen timestamps.
+- Action buttons: Resolve, Unresolve, Ignore (calls `PATCH /issues/{id}`). Hidden for Viewer role.
+- **Stack Trace** tab — Renders `exception.values[]` from latest event data. Shows exception type (red) + value, frames in reverse order with filename, function, line/col number. **Source context:** frames with `pre_context`/`context_line`/`post_context` are expandable — click to reveal actual source code around the error line with line numbers and error-line highlighting. Frames from application code (`in_app=true`) are visually distinguished with a cyan left-border accent and "app" badge.
+- **Breadcrumbs** tab — Timestamped trail of user actions/events leading to the error. Table with type, category (badge), message, data preview (first 5 keys), level badge (color-coded), and timestamp. Scrollable container for long trails.
+- **Context** tab — Rich contextual data extracted from the event payload:
+  - **HTTP Request** — Method badge, URL, query string, request headers (monospace code block).
+  - **User** — ID, email, username, IP address.
+  - **Device & Runtime** — Grid of cards for browser, OS, device, and runtime context (e.g., CPython 3.9.2).
+  - **Extra Data** — Key-value pairs from `event.extra` in monospace code block.
+  - **Modules** — Installed packages/dependencies with version numbers as badge pills (e.g., `sentry-sdk 2.57.0`).
 - **Events** tab — Table of all events for the issue with event ID, timestamp, received time.
-- **Details** tab — Issue ID, fingerprint, timestamps, event count, tags (if present), SDK info.
+- **Details** tab — Issue ID, fingerprint, timestamps, event count, tags (if present), SDK info, environment/server/logger/release.
 
 ### 6.4 Users (`/users`) — Admin Only ✅
 
+- **Role Permissions Guide** — Displayed before the users list as a documentation section. Explains the access rights for each role (Admin, Developer, Viewer) so the admin can make informed role assignments. Covers: dashboard access, issue management, project CRUD, user management, settings access, and API key management.
 - Table: avatar initial, name, email, role badge, status badge (active/disabled), joined date.
 - Actions per user row:
   - **Projects** button — Opens "Manage Projects" modal showing assigned projects (with remove) and available projects (with assign). Uses `POST /projects/{slug}/members` and `DELETE /projects/{slug}/members/{uid}`.
@@ -362,14 +371,20 @@ Additional sections:
 
 ### 6.5 Settings (`/settings`) ✅
 
-Tab-based layout with active tab highlighting:
+Tab-based layout with active tab highlighting. **Role-based tab visibility:**
+
+| Role | Visible Tabs |
+|------|--------------|
+| Admin | All tabs (General, Email/SMTP, Profile, API Keys) |
+| Developer | Profile, API Keys |
+| Viewer | Profile only |
 
 | Tab | Contents | Status |
 |-----|----------|--------|
-| **General** | Instance name, URL fields, loaded from `GET /settings/general` | ✅ Functional |
-| **Email / SMTP** | SMTP host, port, username, password, from email. Save via `PUT /settings/smtp`, test via `POST /settings/smtp/test` | ✅ Functional |
-| **Profile** | Name + email fields, fetched from `GET /users/me`, saved via `PATCH /users/me` with success/error feedback | ✅ Functional |
-| **API Keys** | Table: name, token prefix (`mgb_...••••`), last used, created, expires, revoke button. **Create Token** modal with name + optional expiry. Raw token shown **once** with copy button + security warning. | ✅ Functional |
+| **General** | Instance name, URL fields, loaded from `GET /settings/general` | ✅ Functional (Admin only) |
+| **Email / SMTP** | SMTP host, port, username, password, from email. Save via `PUT /settings/smtp`, test via `POST /settings/smtp/test` | ✅ Functional (Admin only) |
+| **Profile** | Name + email fields, fetched from `GET /users/me`, saved via `PATCH /users/me` with success/error feedback | ✅ Functional (All roles) |
+| **API Keys** | Table: name, token prefix (`mgb_...••••`), last used, created, expires, revoke button. **Create Token** modal with name + optional expiry. Raw token shown **once** with copy button + security warning. | ✅ Functional (Admin + Developer) |
 
 ---
 
@@ -422,19 +437,35 @@ All dashboard pages receive live updates via the shared WebSocket connection:
 
 > **Client-Side Filtering:** The global WebSocket channel (`megoobug:global`) broadcasts to all connected users. The frontend filters events client-side — only events from projects in the user's loaded project list (which is already server-filtered by membership) are applied to UI state.
 
-### 7.3 Email Notifications
+### 7.3 Email Notifications ✅
 
 - Sent when a **new issue** is created or a **resolved issue regresses**.
-- Only sent to users **subscribed to the project**.
-- Requires SMTP configuration in Settings.
-- Email contains: issue title, stack trace summary, direct link to issue detail.
-- **Throttling** — Configurable rate limit per project (e.g., max 10 emails/hour).
+- Only sent to project members with `notify_email=true` in `project_members` table.
+- Requires SMTP configuration in Settings (database or env vars).
+- **CyberPunk-themed HTML template** matching the app's design system:
+  - Logo + brand header with neon glow.
+  - Level badge (color-coded: fatal/error → red, warning → yellow, info → cyan) with left-border accent.
+  - Issue title in monospace font.
+  - Details table: project name, event count, environment.
+  - "View Issue Details →" CTA button with direct deep link to `/projects/{slug}/issues/{id}`.
+  - Fallback URL for plain-text email clients.
+  - MSO/Outlook VML compatibility for button rendering.
+  - Footer with project membership context.
+- **Subject format:** `[Project Name] New Issue: Error title...` or `[Project Name] Regression: Error title...`
+- **Plain-text fallback** included for clients that don't render HTML.
+- Emails are sent inline during event processing (fire-and-forget pattern — failures don't block ingestion).
 
-### 7.4 Notification Preferences
+### 7.4 Invite Email ✅
 
-Users can configure per-project:
-- Receive in-app only / email only / both / none
-- Frequency: every occurrence / first only / every Nth
+- Sent when an admin invites a new user via the Users page.
+- **CyberPunk-themed HTML template** with logo, inviter name, role badge, CTA button, fallback link, and expiry warning.
+- Uses the same SMTP infrastructure as issue notification emails.
+
+### 7.5 Notification Preferences
+
+Users can configure per-project (via `project_members` table):
+- `notify_inapp` (bool) — Receive in-app notifications
+- `notify_email` (bool) — Receive email notifications
 
 ---
 
@@ -911,7 +942,8 @@ ADMIN_NAME=Admin
 | **Phase 5 — Polish** ✅ | Page transition animation (fadeIn + translateY), button micro-animations (active scale), notification dropdown slide animation, comprehensive responsive breakpoints (1024px tablet, 767px mobile, 480px small mobile), mobile-optimized tables/modals/DSN display, global search command palette (⌘K) with Meilisearch multi_search (issues + projects), keyboard navigation (↑↓ + Enter), print stylesheet, `.badge-success` utility, scrollable tabs on mobile | 1 week |
 | **Phase 5.5 — Real-Time** ✅ | WebSocket endpoint (`/ws/notifications`) with JWT cookie auth, Redis pub/sub infrastructure (3 channel tiers: user/project/global), `WebSocketProvider` React context, `useWS()` hook with auto-reconnect + exponential backoff, real-time updates on dashboard (live stat counters + issue table), projects page (live unresolved badge), project detail (live issue list with prepend/update), notification bell (instant push), Sentry envelope ingestion hardening (gzip, length-prefixed items, DSN from envelope headers), unresolved issue count badge on project cards | 1 week |
 | **Phase 6 — Project RBAC** ✅ | **Project-scoped access control:** `get_user_project_ids()` and `check_project_access()` dependencies in backend enforce membership across all API endpoints (v1 projects/issues/stats/search + Sentry compat `/api/0/`). Dashboard stats scoped to user's projects. Search results filtered by membership via Meilisearch filters. WebSocket events filtered client-side. **Member management UI:** Members section in Project Detail → Settings tab (list/add/remove members), "Manage Projects" modal on Users page (assign/unassign projects per user). CSS for member list items. Admins bypass all restrictions. | 1 week |
-| **Phase 7 — Release** | Documentation, README, contributing guide, CI/CD, initial release | 1 week |
+| **Phase 7 — Hardening & Detail** ✅ | **Issue Detail V2:** 5-tab layout (Stack Trace with expandable source context + in_app badges, Breadcrumbs trail, Context with HTTP request/user/device/runtime/extra/modules, Events, Details). **Email Notifications:** CyberPunk-themed HTML email on new issue/regression with deep links, level badges, project/environment context. **Login Redirect:** `?redirect=` parameter preserving original destination across auth flows (layout guard + API 401 + session expiry). **RBAC UI polish:** role-based Settings tab visibility (admin: all, developer: Profile+API Keys, viewer: Profile only), Create Project button hidden for viewers, Resolve/Ignore actions hidden for viewers, role permissions documentation on Users page. | 1 week |
+| **Phase 8 — Release** | Documentation, README, contributing guide, CI/CD, initial release | 1 week |
 
 ---
 
