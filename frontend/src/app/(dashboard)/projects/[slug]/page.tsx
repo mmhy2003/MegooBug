@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ChevronRight, Copy, Check, Loader2, Trash2,
-  FolderKanban, AlertTriangle,
+  FolderKanban, AlertTriangle, UserPlus, Users,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useWS } from "@/components/websocket-provider";
@@ -51,6 +51,23 @@ interface TrendData {
   data: TrendPoint[];
 }
 
+interface ProjectMember {
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  user_role: string;
+  notify_email: boolean;
+  notify_inapp: boolean;
+  joined_at: string;
+}
+
+interface UserItem {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
+
 export default function ProjectDetailPage({
   params,
 }: {
@@ -73,6 +90,11 @@ export default function ProjectDetailPage({
   const [editName, setEditName] = useState("");
   const [editPlatform, setEditPlatform] = useState("");
   const [saving, setSaving] = useState(false);
+  const [members, setMembers] = useState<ProjectMember[]>([]);
+  const [allUsers, setAllUsers] = useState<UserItem[]>([]);
+  const [addingMember, setAddingMember] = useState<string | null>(null);
+  const [removingMember, setRemovingMember] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ role: string } | null>(null);
 
   // Subscribe to project-specific WebSocket channel
   useEffect(() => {
@@ -133,6 +155,12 @@ export default function ProjectDetailPage({
         setProject(proj);
         setEditName(proj.name);
         setEditPlatform(proj.platform || "");
+
+        // Load current user info for role check
+        try {
+          const me = await api.get<{ role: string }>("/api/v1/users/me");
+          setCurrentUser(me);
+        } catch {}
 
         // Trend fetch is non-critical — don't redirect if it fails
         try {
@@ -222,6 +250,61 @@ export default function ProjectDetailPage({
       router.push("/projects");
     } catch {}
     setDeleting(false);
+  }
+
+  // Members management
+  async function loadMembers() {
+    if (!project) return;
+    try {
+      const data = await api.get<ProjectMember[]>(
+        `/api/v1/projects/${slug}/members`
+      );
+      setMembers(data);
+    } catch {}
+  }
+
+  async function loadUsers() {
+    try {
+      const data = await api.get<{ users: UserItem[] }>("/api/v1/users");
+      setAllUsers(data.users || []);
+    } catch {}
+  }
+
+  // Load members when settings tab is active
+  useEffect(() => {
+    if (activeTab === "settings" && project) {
+      loadMembers();
+      if (currentUser?.role === "admin") {
+        loadUsers();
+      }
+    }
+  }, [activeTab, project]);
+
+  const memberUserIds = new Set(members.map((m) => m.user_id));
+  const availableUsers = allUsers.filter((u) => !memberUserIds.has(u.id));
+
+  async function addMember(userId: string) {
+    if (!project) return;
+    setAddingMember(userId);
+    try {
+      await api.post(`/api/v1/projects/${slug}/members`, {
+        user_id: userId,
+        notify_email: true,
+        notify_inapp: true,
+      });
+      await loadMembers();
+    } catch {}
+    setAddingMember(null);
+  }
+
+  async function removeMember(userId: string) {
+    if (!project) return;
+    setRemovingMember(userId);
+    try {
+      await api.delete(`/api/v1/projects/${slug}/members/${userId}`);
+      await loadMembers();
+    } catch {}
+    setRemovingMember(null);
   }
 
   function formatRelativeTime(iso: string) {
@@ -559,6 +642,95 @@ export default function ProjectDetailPage({
                 {saving ? "Saving..." : "Save Changes"}
               </button>
             </div>
+          </div>
+
+          {/* Members Section */}
+          <div className="card">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <h3 style={{ fontSize: "1rem", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Users size={18} />
+                Members ({members.length})
+              </h3>
+            </div>
+
+            {/* Current members list */}
+            {members.length === 0 ? (
+              <p className="text-muted" style={{ fontSize: "0.8125rem" }}>
+                No members assigned to this project.
+              </p>
+            ) : (
+              <div className="member-list">
+                {members.map((m) => (
+                  <div key={m.user_id} className="member-item">
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flex: 1 }}>
+                      <div className="user-avatar" style={{ width: 32, height: 32, fontSize: "0.75rem" }}>
+                        {m.user_name.charAt(0)}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 500, fontSize: "0.875rem" }}>
+                          {m.user_name}
+                        </div>
+                        <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                          {m.user_email} · <span className={m.user_role === "admin" ? "badge badge-error" : m.user_role === "developer" ? "badge badge-info" : "badge badge-warning"} style={{ fontSize: "0.625rem", padding: "0.1rem 0.4rem" }}>{m.user_role}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {currentUser?.role === "admin" && (
+                      <button
+                        className="btn btn-ghost btn-danger-text"
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                        onClick={() => removeMember(m.user_id)}
+                        disabled={removingMember === m.user_id}
+                      >
+                        {removingMember === m.user_id ? (
+                          <Loader2 size={14} className="spin" />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add member (admin only) */}
+            {currentUser?.role === "admin" && availableUsers.length > 0 && (
+              <div style={{ marginTop: "1rem", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+                <h4 style={{ fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.75rem", color: "var(--text-secondary)" }}>
+                  Add Member
+                </h4>
+                <div className="member-list">
+                  {availableUsers.map((u) => (
+                    <div key={u.id} className="member-item">
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flex: 1 }}>
+                        <div className="user-avatar" style={{ width: 28, height: 28, fontSize: "0.7rem" }}>
+                          {u.name.charAt(0)}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 500, fontSize: "0.8125rem" }}>{u.name}</div>
+                          <div className="text-muted" style={{ fontSize: "0.7rem" }}>{u.email}</div>
+                        </div>
+                      </div>
+                      <button
+                        className="btn btn-primary"
+                        style={{ padding: "0.25rem 0.625rem", fontSize: "0.75rem" }}
+                        onClick={() => addMember(u.id)}
+                        disabled={addingMember === u.id}
+                      >
+                        {addingMember === u.id ? (
+                          <Loader2 size={14} className="spin" />
+                        ) : (
+                          <UserPlus size={14} />
+                        )}
+                        Add
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Danger Zone */}

@@ -49,8 +49,15 @@ export default function DashboardPage() {
   const { lastMessage } = useWS();
 
   // Real-time: handle WebSocket messages for live stat updates
+  // Only apply events from projects the user has access to
   useEffect(() => {
     if (!lastMessage) return;
+
+    // Filter: only process events for projects the user is a member of
+    const msgProjectId = lastMessage.project_id;
+    if (msgProjectId && projects.size > 0 && !projects.has(msgProjectId)) {
+      return; // Skip events for projects the user isn't assigned to
+    }
 
     if (lastMessage.type === "stats_update") {
       setStats((prev) => {
@@ -102,7 +109,7 @@ export default function DashboardPage() {
         });
       }
     }
-  }, [lastMessage]);
+  }, [lastMessage, projects]);
   useEffect(() => {
     async function load() {
       try {

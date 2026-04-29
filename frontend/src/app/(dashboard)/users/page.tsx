@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { UserPlus, Loader2, Users as UsersIcon } from "lucide-react";
+import { UserPlus, Loader2, Users as UsersIcon, FolderKanban } from "lucide-react";
 import { api } from "@/lib/api";
 import { InviteUserModal } from "@/components/invite-user-modal";
+import { ManageProjectsModal } from "@/components/manage-projects-modal";
 
 interface UserItem {
   id: string;
@@ -24,6 +25,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [manageUser, setManageUser] = useState<UserItem | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -147,14 +149,24 @@ export default function UsersPage() {
                   </td>
                   <td className="text-muted">{formatDate(user.created_at)}</td>
                   <td>
-                    <button
-                      className="btn btn-ghost"
-                      style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
-                      onClick={() => toggleUserStatus(user.id)}
-                      disabled={updatingId === user.id}
-                    >
-                      {user.is_active ? "Disable" : "Enable"}
-                    </button>
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                        onClick={() => setManageUser(user)}
+                      >
+                        <FolderKanban size={13} />
+                        Projects
+                      </button>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                        onClick={() => toggleUserStatus(user.id)}
+                        disabled={updatingId === user.id}
+                      >
+                        {user.is_active ? "Disable" : "Enable"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -167,6 +179,14 @@ export default function UsersPage() {
         <InviteUserModal
           onClose={() => setShowInvite(false)}
           onCreated={() => loadUsers()}
+        />
+      )}
+
+      {manageUser && (
+        <ManageProjectsModal
+          userId={manageUser.id}
+          userName={manageUser.name}
+          onClose={() => setManageUser(null)}
         />
       )}
     </div>

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.dependencies import CurrentUser, require_admin, require_developer_or_above
+from app.dependencies import CurrentUser, require_admin, require_developer_or_above, get_user_project_ids, check_project_access
 from app.models.project import Project, ProjectMember
 from app.models.user import User
 from app.schemas.project import (
@@ -35,7 +35,7 @@ async def list_projects(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """List all projects with unresolved issue counts."""
+    """List projects with unresolved issue counts. Non-admins see only their assigned projects."""
     # Subquery for unresolved issue count per project
     unresolved_subq = (
         select(func.count(Issue.id))
@@ -48,9 +48,14 @@ async def list_projects(
         .label("unresolved_count")
     )
 
-    result = await db.execute(
-        select(Project, unresolved_subq).order_by(Project.created_at.desc())
-    )
+    query = select(Project, unresolved_subq).order_by(Project.created_at.desc())
+
+    # Filter by membership for non-admins
+    project_ids = await get_user_project_ids(current_user, db)
+    if project_ids is not None:
+        query = query.where(Project.id.in_(project_ids))
+
+    result = await db.execute(query)
 
     projects = []
     for project, unresolved_count in result.all():
@@ -127,12 +132,14 @@ async def get_project(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get project details by slug."""
+    """Get project details by slug. Access restricted to members and admins."""
     result = await db.execute(
         select(Project).where(Project.slug == slug)
     )
     project = result.scalar_one_or_none()
     if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not await check_project_access(current_user, project.id, db):
         raise HTTPException(status_code=404, detail="Project not found")
     return project
 
@@ -144,12 +151,14 @@ async def update_project(
     current_user: User = Depends(require_developer_or_above),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update a project. Admin or Developer required."""
+    """Update a project. Admin or Developer required. Must be a member."""
     result = await db.execute(
         select(Project).where(Project.slug == slug)
     )
     project = result.scalar_one_or_none()
     if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not await check_project_access(current_user, project.id, db):
         raise HTTPException(status_code=404, detail="Project not found")
 
     if body.name is not None:
@@ -196,12 +205,14 @@ async def list_members(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """List members of a project."""
+    """List members of a project. Must be a member or admin."""
     result = await db.execute(
         select(Project).where(Project.slug == slug)
     )
     project = result.scalar_one_or_none()
     if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not await check_project_access(current_user, project.id, db):
         raise HTTPException(status_code=404, detail="Project not found")
 
     members_result = await db.execute(

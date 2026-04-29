@@ -5,7 +5,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import CurrentUser, require_developer_or_above
+from app.dependencies import CurrentUser, require_developer_or_above, check_project_access
 from app.models.project import Project
 from app.models.issue import Issue, IssueStatus, IssueLevel
 from app.models.event import Event
@@ -29,12 +29,14 @@ async def list_project_issues(
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-    """List issues for a project, with optional status/level filters."""
+    """List issues for a project. Must be a member or admin."""
     result = await db.execute(
         select(Project).where(Project.slug == slug)
     )
     project = result.scalar_one_or_none()
     if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not await check_project_access(current_user, project.id, db):
         raise HTTPException(status_code=404, detail="Project not found")
 
     query = select(Issue).where(Issue.project_id == project.id)
@@ -65,12 +67,14 @@ async def get_issue(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get issue detail by ID."""
+    """Get issue detail by ID. Must have access to the issue's project."""
     result = await db.execute(
         select(Issue).where(Issue.id == issue_id)
     )
     issue = result.scalar_one_or_none()
     if issue is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    if not await check_project_access(current_user, issue.project_id, db):
         raise HTTPException(status_code=404, detail="Issue not found")
     return issue
 
@@ -82,12 +86,14 @@ async def update_issue(
     current_user: User = Depends(require_developer_or_above),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update issue status (resolve, ignore, unresolve). Admin or Developer required."""
+    """Update issue status. Must have access to the issue's project."""
     result = await db.execute(
         select(Issue).where(Issue.id == issue_id)
     )
     issue = result.scalar_one_or_none()
     if issue is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    if not await check_project_access(current_user, issue.project_id, db):
         raise HTTPException(status_code=404, detail="Issue not found")
 
     old_status = issue.status
@@ -110,12 +116,15 @@ async def list_issue_events(
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-    """List events for an issue."""
-    # Verify issue exists
+    """List events for an issue. Must have access to the issue's project."""
+    # Verify issue exists and check access
     issue_result = await db.execute(
         select(Issue).where(Issue.id == issue_id)
     )
-    if issue_result.scalar_one_or_none() is None:
+    issue = issue_result.scalar_one_or_none()
+    if issue is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    if not await check_project_access(current_user, issue.project_id, db):
         raise HTTPException(status_code=404, detail="Issue not found")
 
     count_result = await db.execute(
@@ -142,11 +151,13 @@ async def get_event(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a single event by ID."""
+    """Get a single event by ID. Must have access to the event's project."""
     result = await db.execute(
         select(Event).where(Event.id == event_id)
     )
     event = result.scalar_one_or_none()
     if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if not await check_project_access(current_user, event.project_id, db):
         raise HTTPException(status_code=404, detail="Event not found")
     return event

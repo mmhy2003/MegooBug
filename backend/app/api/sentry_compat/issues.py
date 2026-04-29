@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import CurrentUser
+from app.dependencies import CurrentUser, check_project_access
 from app.models.issue import Issue, IssueStatus
 from app.models.event import Event
 from app.logging import get_logger
@@ -29,6 +29,8 @@ async def get_issue(
     issue = result.scalar_one_or_none()
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
+    if not await check_project_access(current_user, issue.project_id, db):
+        raise HTTPException(status_code=404, detail="Issue not found")
     return _issue_detail_to_sentry(issue)
 
 
@@ -45,6 +47,8 @@ async def update_issue(
     )
     issue = result.scalar_one_or_none()
     if issue is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    if not await check_project_access(current_user, issue.project_id, db):
         raise HTTPException(status_code=404, detail="Issue not found")
 
     # Handle status updates
@@ -75,7 +79,10 @@ async def list_issue_events(
     result = await db.execute(
         select(Issue).where(Issue.id == issue_id)
     )
-    if result.scalar_one_or_none() is None:
+    issue = result.scalar_one_or_none()
+    if issue is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    if not await check_project_access(current_user, issue.project_id, db):
         raise HTTPException(status_code=404, detail="Issue not found")
 
     events_result = await db.execute(
@@ -104,6 +111,8 @@ async def get_latest_event(
     event = result.scalar_one_or_none()
     if event is None:
         raise HTTPException(status_code=404, detail="No events found")
+    if not await check_project_access(current_user, event.project_id, db):
+        raise HTTPException(status_code=404, detail="No events found")
     return _event_to_sentry(event)
 
 
@@ -119,6 +128,8 @@ async def get_event(
     )
     event = result.scalar_one_or_none()
     if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if not await check_project_access(current_user, event.project_id, db):
         raise HTTPException(status_code=404, detail="Event not found")
     return _event_to_sentry(event)
 

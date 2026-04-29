@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import CurrentUser
+from app.dependencies import CurrentUser, get_user_project_ids, check_project_access
 from app.models.project import Project
 from app.models.issue import Issue
 
@@ -17,10 +17,14 @@ async def list_projects(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """List all projects (flat, no org scoping)."""
-    result = await db.execute(
-        select(Project).order_by(Project.created_at.desc())
-    )
+    """List projects (flat, no org scoping). Non-admins see only their assigned projects."""
+    query = select(Project).order_by(Project.created_at.desc())
+
+    project_ids = await get_user_project_ids(current_user, db)
+    if project_ids is not None:
+        query = query.where(Project.id.in_(project_ids))
+
+    result = await db.execute(query)
     projects = result.scalars().all()
     return [_project_to_sentry(p) for p in projects]
 
@@ -32,12 +36,14 @@ async def get_project(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get project detail. Org param is ignored."""
+    """Get project detail. Org param is ignored. Must be a member or admin."""
     result = await db.execute(
         select(Project).where(Project.slug == slug)
     )
     project = result.scalar_one_or_none()
     if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not await check_project_access(current_user, project.id, db):
         raise HTTPException(status_code=404, detail="Project not found")
     return _project_to_sentry(project)
 
@@ -56,6 +62,8 @@ async def list_project_issues(
     )
     project = result.scalar_one_or_none()
     if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not await check_project_access(current_user, project.id, db):
         raise HTTPException(status_code=404, detail="Project not found")
 
     issues_result = await db.execute(
@@ -81,6 +89,8 @@ async def list_project_keys(
     )
     project = result.scalar_one_or_none()
     if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not await check_project_access(current_user, project.id, db):
         raise HTTPException(status_code=404, detail="Project not found")
 
     # Build DSN URL

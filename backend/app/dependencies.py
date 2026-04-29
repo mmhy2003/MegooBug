@@ -127,3 +127,48 @@ def require_role(*roles: UserRole):
 
 require_admin = require_role(UserRole.ADMIN)
 require_developer_or_above = require_role(UserRole.ADMIN, UserRole.DEVELOPER)
+
+
+async def get_user_project_ids(
+    user: User,
+    db: AsyncSession,
+) -> set[uuid.UUID] | None:
+    """Return the set of project IDs the user is a member of.
+
+    Returns None for admins (meaning "all projects" — no filtering needed).
+    Returns an empty set if the user has no memberships.
+    """
+    if user.role == UserRole.ADMIN:
+        return None  # Admin sees everything
+
+    from app.models.project import ProjectMember
+
+    result = await db.execute(
+        select(ProjectMember.project_id).where(
+            ProjectMember.user_id == user.id
+        )
+    )
+    return set(result.scalars().all())
+
+
+async def check_project_access(
+    user: User,
+    project_id: uuid.UUID,
+    db: AsyncSession,
+) -> bool:
+    """Check if a user has access to a specific project.
+
+    Admins always have access. Non-admins must be a project member.
+    """
+    if user.role == UserRole.ADMIN:
+        return True
+
+    from app.models.project import ProjectMember
+
+    result = await db.execute(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == user.id,
+        )
+    )
+    return result.scalar_one_or_none() is not None

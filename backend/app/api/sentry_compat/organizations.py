@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import CurrentUser
+from app.dependencies import CurrentUser, get_user_project_ids
 from app.models.project import Project
 from app.models.issue import Issue
 from app.models.user import User
@@ -59,10 +59,14 @@ async def list_org_projects(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """List all projects for the organization."""
-    result = await db.execute(
-        select(Project).order_by(Project.created_at.desc())
-    )
+    """List projects for the organization. Non-admins see only their assigned projects."""
+    query = select(Project).order_by(Project.created_at.desc())
+
+    project_ids = await get_user_project_ids(current_user, db)
+    if project_ids is not None:
+        query = query.where(Project.id.in_(project_ids))
+
+    result = await db.execute(query)
     projects = result.scalars().all()
     return [_project_to_sentry(p) for p in projects]
 
@@ -75,8 +79,13 @@ async def list_org_issues(
     query: str | None = None,
     cursor: str | None = None,
 ):
-    """List all issues across the organization."""
+    """List issues across the organization. Non-admins see only issues from their projects."""
     q = select(Issue).order_by(Issue.last_seen.desc()).limit(25)
+
+    project_ids = await get_user_project_ids(current_user, db)
+    if project_ids is not None:
+        q = q.where(Issue.project_id.in_(project_ids))
+
     result = await db.execute(q)
     issues = result.scalars().all()
     return [_issue_to_sentry(i) for i in issues]

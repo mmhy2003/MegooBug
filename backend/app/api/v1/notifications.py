@@ -6,7 +6,7 @@ from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import CurrentUser, require_admin
+from app.dependencies import CurrentUser, require_admin, get_user_project_ids
 from app.models.notification import Notification
 from app.models.setting import Setting
 from app.models.user import User
@@ -241,8 +241,9 @@ async def test_smtp(
 async def global_search(
     q: str = Query("", min_length=1, max_length=200),
     current_user: CurrentUser = None,
+    db: AsyncSession = Depends(get_db),
 ):
-    """Global search powered by Meilisearch."""
+    """Global search powered by Meilisearch. Non-admins see only results from their projects."""
     if not q.strip():
         return {"results": [], "query": q}
 
@@ -255,24 +256,39 @@ async def global_search(
             app_settings.MEILISEARCH_MASTER_KEY,
         )
 
-        results = client.multi_search(
-            [
-                {
-                    "indexUid": "issues",
-                    "q": q,
-                    "limit": 5,
-                    "attributesToRetrieve": [
-                        "id", "title", "status", "level", "project_id",
-                    ],
-                },
-                {
-                    "indexUid": "projects",
-                    "q": q,
-                    "limit": 5,
-                    "attributesToRetrieve": ["id", "name", "slug", "platform"],
-                },
-            ]
-        )
+        # Build project filter for non-admins
+        project_filter = None
+        if current_user:
+            project_ids = await get_user_project_ids(current_user, db)
+            if project_ids is not None:
+                if not project_ids:
+                    # User has no projects — return empty
+                    return {"results": [], "query": q}
+                id_list = " OR ".join(f'project_id = "{pid}"' for pid in project_ids)
+                project_filter = id_list
+
+        issues_search = {
+            "indexUid": "issues",
+            "q": q,
+            "limit": 5,
+            "attributesToRetrieve": [
+                "id", "title", "status", "level", "project_id",
+            ],
+        }
+        projects_search = {
+            "indexUid": "projects",
+            "q": q,
+            "limit": 5,
+            "attributesToRetrieve": ["id", "name", "slug", "platform"],
+        }
+
+        if project_filter:
+            issues_search["filter"] = project_filter
+            # For projects index, filter by id instead of project_id
+            proj_id_list = " OR ".join(f'id = "{pid}"' for pid in project_ids)
+            projects_search["filter"] = proj_id_list
+
+        results = client.multi_search([issues_search, projects_search])
 
         formatted = []
         for r in results.get("results", []):
