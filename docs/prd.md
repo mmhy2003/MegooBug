@@ -1,6 +1,6 @@
 # MegooBug — Product Requirements Document
 
-> **Version:** 1.0 · **Date:** 2026-04-28 · **Status:** Draft · **License:** MIT (Open Source)
+> **Version:** 1.1 · **Date:** 2026-04-29 · **Status:** Draft · **License:** MIT (Open Source)
 
 ---
 
@@ -268,15 +268,18 @@ Running `make` (with no arguments) prints all available commands.
 
 | Permission | Admin | Developer | Viewer |
 |------------|:-----:|:---------:|:------:|
-| View dashboard | ✅ | ✅ | ✅ |
-| View issues/events | ✅ | ✅ | ✅ |
+| View dashboard (scoped to assigned projects) | ✅ All | ✅ Own | ✅ Own |
+| View issues/events (scoped to assigned projects) | ✅ All | ✅ Own | ✅ Own |
 | Resolve/ignore issues | ✅ | ✅ | ❌ |
 | Create/edit projects | ✅ | ✅ | ❌ |
 | Delete projects | ✅ | ❌ | ❌ |
 | Manage users & roles | ✅ | ❌ | ❌ |
+| Assign users to projects | ✅ | ❌ | ❌ |
 | Configure settings (SMTP, etc.) | ✅ | ❌ | ❌ |
 | Invite users | ✅ | ❌ | ❌ |
 | View/manage own profile | ✅ | ✅ | ✅ |
+
+> **Project-Scoped Access:** Admins see all projects, issues, and stats globally. Developers and Viewers only see projects they have been explicitly assigned to (via `project_members`). This scoping applies system-wide: dashboard stats, project listings, issue listings, search results, and notifications are all filtered by membership. Unauthorized project access returns 404 (not 403) to prevent information leakage.
 
 ### 5.3 Invite Flow
 
@@ -315,29 +318,30 @@ Running `make` (with no arguments) prints all available commands.
 
 | Card | Data | Links to |
 |------|------|----------|
-| Total Projects | Count of all projects | `/projects` |
-| Total Errors (24h) | Events received in last 24 hours | — |
-| Unresolved Issues | Open issue count | — |
-| Active Users | Active user count | `/users` |
+| Total Projects | Count of user's assigned projects (admins: all) | `/projects` |
+| Total Errors (24h) | Events received in last 24h for user's projects | — |
+| Unresolved Issues | Open issue count for user's projects | — |
+| Active Users | Active user count (global) | `/users` |
 
 Additional sections:
-- **Recent Unresolved Issues** — Table of latest 10 unresolved issues across all projects, with clickable rows linking to issue detail.
+- **Recent Unresolved Issues** — Table of latest 10 unresolved issues across user's assigned projects, with clickable rows linking to issue detail.
 - Project names resolved from a project map lookup.
-- **Real-time:** stat counters increment live via WebSocket `stats_update` events; new issues prepend to the table via `new_event` events.
+- **Real-time:** stat counters increment live via WebSocket `stats_update` events; new issues prepend to the table via `new_event` events. WebSocket events are **filtered client-side** — only events from the user's assigned projects are applied.
 
 ### 6.3 Projects (`/projects`) ✅
 
 **List View:**
 - Project cards showing: name, platform/slug, creation time, **unresolved issue count badge** (red pill with AlertCircle icon). Clickable → project detail.
+- **Project-scoped:** Non-admin users only see projects they are assigned to. Admins see all.
 - **Real-time:** unresolved count badge increments live when new issues arrive via WebSocket.
-- **Create Project** button → glassmorphism modal: name (required) + platform (select). On success: shows DSN with copy button.
+- **Create Project** button → glassmorphism modal: name (required) + platform (select). On success: shows DSN with copy button. Creator is auto-added as a project member.
 - Empty state with CTA when no projects exist.
 
 **Project Detail (`/projects/:slug`):** ✅
 - Breadcrumb navigation: Projects → Project Name.
 - **Overview** tab — Client DSN with copy button, public key display, 14-day error trend bar chart (CSS-only, no external chart library), project metadata (slug, platform, created).
 - **Issues** tab — Filterable by status (All / Unresolved / Resolved / Ignored). Table with level badge, event count, status dot, last seen, and inline Resolve / Ignore / Unresolve action buttons. **Real-time:** subscribes to project WebSocket channel; new issues appear instantly, existing issue event counts update live.
-- **Settings** tab — Edit name/platform with save, Danger Zone with delete confirmation dialog.
+- **Settings** tab — Edit name/platform with save. **Members section** — list of current members (name, email, role badge) with remove button (admin only); "Add Member" panel showing unassigned users with add button (admin only). Danger Zone with delete confirmation dialog.
 
 **Issue Detail (`/projects/:slug/issues/:id`):** ✅
 - Issue header: title, level badge, status badge, event count, first/last seen timestamps.
@@ -349,8 +353,11 @@ Additional sections:
 ### 6.4 Users (`/users`) — Admin Only ✅
 
 - Table: avatar initial, name, email, role badge, status badge (active/disabled), joined date.
-- Actions: Edit button (placeholder for Phase 4).
-- **Invite User** button (placeholder for Phase 4 — invite modal).
+- Actions per user row:
+  - **Projects** button — Opens "Manage Projects" modal showing assigned projects (with remove) and available projects (with assign). Uses `POST /projects/{slug}/members` and `DELETE /projects/{slug}/members/{uid}`.
+  - **Disable/Enable** toggle — Toggle user active status.
+- Role dropdown: inline role change (admin / developer / viewer).
+- **Invite User** button → invite modal (email + role → shareable link).
 - Fetches from `GET /api/v1/users` (returns `{ users: [...], total }`).
 
 ### 6.5 Settings (`/settings`) ✅
@@ -385,6 +392,7 @@ Tab-based layout with active tab highlighting:
 
 - Indexes are updated asynchronously via **Celery tasks** on create/update/delete.
 - Full re-index available via `make reindex` Makefile target.
+- **Project-scoped:** Non-admin users' search results are filtered by their assigned project IDs. Meilisearch queries include `project_id` filters for issues and `id` filters for projects.
 
 ---
 
@@ -405,12 +413,14 @@ All dashboard pages receive live updates via the shared WebSocket connection:
 
 | Page | Update Trigger | UI Effect |
 |------|---------------|----------|
-| **Dashboard** | `stats_update` | Increment "Errors (24h)" and "Unresolved Issues" counters |
-| **Dashboard** | `new_event` (new issue) | Prepend issue to "Recent Unresolved Issues" table |
+| **Dashboard** | `stats_update` | Increment "Errors (24h)" and "Unresolved Issues" counters (filtered by user's projects) |
+| **Dashboard** | `new_event` (new issue) | Prepend issue to "Recent Unresolved Issues" table (filtered by user's projects) |
 | **Projects** | `stats_update` | Increment unresolved count badge on the matching project card |
 | **Project Detail** | `new_event` (new issue) | Prepend new issue to the issues list |
 | **Project Detail** | `new_event` (existing issue) | Update event count and last seen timestamp in-place |
 | **Notification Bell** | `new_notification` | Increment badge, prepend to dropdown |
+
+> **Client-Side Filtering:** The global WebSocket channel (`megoobug:global`) broadcasts to all connected users. The frontend filters events client-side — only events from projects in the user's loaded project list (which is already server-filtered by membership) are applied to UI state.
 
 ### 7.3 Email Notifications
 
@@ -478,17 +488,17 @@ Tokens are scoped API keys created per-user in **Settings → API Keys**. Each t
 | GET | `/api/0/` | `/api/0/` | API index / server info |
 | GET | `/api/0/organizations/` | List orgs | Returns single org (the instance) |
 | GET | `/api/0/organizations/{org}/` | Org detail | Instance detail |
-| GET | `/api/0/organizations/{org}/projects/` | List org projects | All projects |
-| GET | `/api/0/projects/` | List projects | All projects (flat) |
-| GET | `/api/0/projects/{org}/{project_slug}/` | Project detail | Project by slug |
-| GET | `/api/0/projects/{org}/{project_slug}/issues/` | List project issues | Filterable issue list |
-| GET | `/api/0/organizations/{org}/issues/` | List org issues | All issues across projects |
-| GET | `/api/0/issues/{issue_id}/` | Issue detail | Full issue with metadata |
-| PUT | `/api/0/issues/{issue_id}/` | Update issue | Resolve, ignore, assign |
-| GET | `/api/0/issues/{issue_id}/events/` | Issue events | Events for an issue |
-| GET | `/api/0/issues/{issue_id}/events/latest/` | Latest event | Most recent event |
-| GET | `/api/0/events/{event_id}/` | Event detail | Full event payload |
-| GET | `/api/0/projects/{org}/{project_slug}/keys/` | List DSN keys | Client keys (DSNs) |
+| GET | `/api/0/organizations/{org}/projects/` | List org projects | User's assigned projects (admins: all) |
+| GET | `/api/0/projects/` | List projects | User's assigned projects (flat) |
+| GET | `/api/0/projects/{org}/{project_slug}/` | Project detail | Project by slug (membership required) |
+| GET | `/api/0/projects/{org}/{project_slug}/issues/` | List project issues | Filterable issue list (membership required) |
+| GET | `/api/0/organizations/{org}/issues/` | List org issues | Issues across user's assigned projects |
+| GET | `/api/0/issues/{issue_id}/` | Issue detail | Full issue with metadata (membership required) |
+| PUT | `/api/0/issues/{issue_id}/` | Update issue | Resolve, ignore, assign (membership required) |
+| GET | `/api/0/issues/{issue_id}/events/` | Issue events | Events for an issue (membership required) |
+| GET | `/api/0/issues/{issue_id}/events/latest/` | Latest event | Most recent event (membership required) |
+| GET | `/api/0/events/{event_id}/` | Event detail | Full event payload (membership required) |
+| GET | `/api/0/projects/{org}/{project_slug}/keys/` | List DSN keys | Client keys (membership required) |
 
 #### Sentry CLI Configuration
 
@@ -695,8 +705,8 @@ api_tokens
 ### Projects
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/projects` | List projects |
-| POST | `/api/v1/projects` | Create project |
+| GET | `/api/v1/projects` | List projects (scoped to user's memberships; admins: all) |
+| POST | `/api/v1/projects` | Create project (creator auto-added as member) |
 | GET | `/api/v1/projects/{slug}` | Project detail |
 | PATCH | `/api/v1/projects/{slug}` | Update project |
 | DELETE | `/api/v1/projects/{slug}` | Delete project (admin) |
@@ -745,15 +755,15 @@ api_tokens
 ### Stats
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/stats/dashboard` | Dashboard aggregates |
-| GET | `/api/v1/stats/projects/{slug}/trends` | Error trend data |
+| GET | `/api/v1/stats/dashboard` | Dashboard aggregates (scoped to user's projects) |
+| GET | `/api/v1/stats/projects/{slug}/trends` | Error trend data (membership required) |
 
 ### Search
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/search` | Global search (issues, projects, events) |
-| GET | `/api/v1/search/issues` | Search issues only |
-| GET | `/api/v1/search/events` | Search events only |
+| GET | `/api/v1/search` | Global search (scoped to user's projects for non-admins) |
+| GET | `/api/v1/search/issues` | Search issues only (scoped) |
+| GET | `/api/v1/search/events` | Search events only (scoped) |
 
 ---
 
@@ -877,6 +887,7 @@ ADMIN_NAME=Admin
 |------|----------------|
 | Authentication | JWT with HTTP-only cookies (web UI); Bearer API tokens (`/api/0/` compat layer) |
 | Authorization | Role-based middleware on every endpoint; API tokens inherit owner's role |
+| **Project-Scoped Access** | **Non-admin users can only access projects they are members of. All API endpoints (v1 + compat) enforce membership checks. Unauthorized access returns 404 to prevent information leakage. Admins bypass all restrictions.** |
 | API Tokens | Stored as bcrypt hashes; raw token shown once on creation; `mgb_` prefix for identification |
 | DSN Auth | Public key validation on ingest endpoints |
 | CSRF | SameSite cookie + CSRF token for mutations |
@@ -899,7 +910,8 @@ ADMIN_NAME=Admin
 | **Phase 4 — Notifications** ✅ | Backend notification API (list, unread count, mark read, mark all read), notification dispatch on new issue/regression (via ingest service → ProjectMember fan-out), NotificationBell component with **WebSocket real-time push** + 30s polling fallback + dropdown + mark read, invite user modal (email + role → shareable link with copy), users page with inline role change + enable/disable toggle, SMTP settings persistence via Settings API (load/save JSONB), general settings persistence, `PUT` method added to frontend API client | 2 weeks |
 | **Phase 5 — Polish** ✅ | Page transition animation (fadeIn + translateY), button micro-animations (active scale), notification dropdown slide animation, comprehensive responsive breakpoints (1024px tablet, 767px mobile, 480px small mobile), mobile-optimized tables/modals/DSN display, global search command palette (⌘K) with Meilisearch multi_search (issues + projects), keyboard navigation (↑↓ + Enter), print stylesheet, `.badge-success` utility, scrollable tabs on mobile | 1 week |
 | **Phase 5.5 — Real-Time** ✅ | WebSocket endpoint (`/ws/notifications`) with JWT cookie auth, Redis pub/sub infrastructure (3 channel tiers: user/project/global), `WebSocketProvider` React context, `useWS()` hook with auto-reconnect + exponential backoff, real-time updates on dashboard (live stat counters + issue table), projects page (live unresolved badge), project detail (live issue list with prepend/update), notification bell (instant push), Sentry envelope ingestion hardening (gzip, length-prefixed items, DSN from envelope headers), unresolved issue count badge on project cards | 1 week |
-| **Phase 6 — Release** | Documentation, README, contributing guide, CI/CD, initial release | 1 week |
+| **Phase 6 — Project RBAC** ✅ | **Project-scoped access control:** `get_user_project_ids()` and `check_project_access()` dependencies in backend enforce membership across all API endpoints (v1 projects/issues/stats/search + Sentry compat `/api/0/`). Dashboard stats scoped to user's projects. Search results filtered by membership via Meilisearch filters. WebSocket events filtered client-side. **Member management UI:** Members section in Project Detail → Settings tab (list/add/remove members), "Manage Projects" modal on Users page (assign/unassign projects per user). CSS for member list items. Admins bypass all restrictions. | 1 week |
+| **Phase 7 — Release** | Documentation, README, contributing guide, CI/CD, initial release | 1 week |
 
 ---
 
@@ -911,7 +923,7 @@ ADMIN_NAME=Admin
 - **Performance Monitoring** — Transaction tracing, spans, slow query detection.
 - **Session Replay** — Record and replay user sessions.
 - **Release Tracking** — Associate errors with deploy versions.
-- **Multi-org / Teams** — Organization-level isolation.
+- **Multi-org / Teams** — Organization-level isolation with cross-org project sharing.
 
 ---
 
