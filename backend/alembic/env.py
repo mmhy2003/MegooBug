@@ -13,8 +13,13 @@ from app.models import *  # noqa: F401, F403
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
+# Only configure logging from alembic.ini when running alembic CLI directly.
+# When running embedded via _auto_migrate(), the app's setup_logging() has
+# already configured handlers and fileConfig() would destroy them.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    import logging
+    if not logging.getLogger("megoobug").handlers and not logging.root.handlers:
+        fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
 

@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-megoo}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
@@ -17,6 +18,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     volumes:
       - redis_data:/data
     healthcheck:
@@ -29,6 +31,7 @@ services:
 
   meilisearch:
     image: getmeili/meilisearch:v1.7
+    restart: unless-stopped
     environment:
       MEILI_MASTER_KEY: ${MEILISEARCH_MASTER_KEY:-change-me-to-a-random-32-char-string}
       MEILI_ENV: production
@@ -46,6 +49,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    restart: unless-stopped
     env_file: .env
     depends_on:
       postgres:
@@ -63,6 +67,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    restart: unless-stopped
     command: celery -A app.worker worker --loglevel=info
     env_file: .env
     depends_on:
@@ -83,6 +88,7 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL}
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
+    restart: unless-stopped
     env_file: .env
     ports:
       - "${FRONTEND_PORT}:3000"

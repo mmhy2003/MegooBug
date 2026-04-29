@@ -28,7 +28,7 @@ async def _auto_migrate():
         alembic_cfg = Config("alembic.ini")
         command.upgrade(alembic_cfg, "head")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     with ThreadPoolExecutor(max_workers=1) as executor:
         await loop.run_in_executor(executor, _run_upgrade)
 
@@ -68,9 +68,23 @@ async def lifespan(app: FastAPI):
     logger.info("%s starting up (env=%s, signup=%s)",
                 settings.APP_NAME, settings.ENVIRONMENT, settings.ALLOW_SIGNUP)
 
-    await _auto_migrate()
-    await _auto_seed()
-    await init_redis()
+    try:
+        await _auto_migrate()
+    except Exception:
+        logger.exception("Failed to run database migrations — aborting startup")
+        raise
+
+    try:
+        await _auto_seed()
+    except Exception:
+        logger.exception("Failed to seed admin user — aborting startup")
+        raise
+
+    try:
+        await init_redis()
+    except Exception:
+        logger.exception("Failed to initialise Redis — aborting startup")
+        raise
 
     logger.info("%s ready to accept connections", settings.APP_NAME)
     yield

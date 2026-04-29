@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -28,6 +29,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY . .
 
 ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
