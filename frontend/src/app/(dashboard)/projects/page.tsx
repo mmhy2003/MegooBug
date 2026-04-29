@@ -206,7 +206,7 @@ export default function ProjectsPage() {
         <CreateProjectModal
           onClose={() => setShowCreate(false)}
           onCreated={(project) => {
-            setProjects((prev) => [project, ...prev]);
+            setProjects((prev) => [{ ...project, unresolved_count: 0 }, ...prev]);
           }}
         />
       )}

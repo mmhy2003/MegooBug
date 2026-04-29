@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, FormEvent, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Bug, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
@@ -13,7 +13,7 @@ interface InviteInfo {
   expires_at: string;
 }
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token") || "";
@@ -244,5 +244,20 @@ export default function RegisterPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={
+      <div className="auth-layout">
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", color: "var(--text-secondary)" }}>
+          <Loader2 size={24} className="spin" />
+          Loading...
+        </div>
+      </div>
+    }>
+      <RegisterForm />
+    </Suspense>
   );
 }
