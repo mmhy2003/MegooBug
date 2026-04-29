@@ -11,6 +11,9 @@ import {
   RotateCw,
   Copy,
   Check,
+  ChevronDown,
+  ChevronUp,
+  Shield,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { InviteUserModal } from "@/components/invite-user-modal";
@@ -54,6 +57,7 @@ export default function UsersPage() {
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
+  const [showRoles, setShowRoles] = useState(false);
 
   useEffect(() => {
     loadAll();
@@ -174,6 +178,106 @@ export default function UsersPage() {
           <UserPlus size={16} />
           Invite User
         </button>
+      </div>
+
+      {/* ── Roles Reference Card ── */}
+      <div
+        className="card"
+        style={{ marginBottom: "1.5rem", padding: 0, overflow: "hidden" }}
+      >
+        <button
+          onClick={() => setShowRoles(!showRoles)}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            padding: "0.875rem 1.25rem",
+            background: "none",
+            border: "none",
+            color: "var(--text-primary)",
+            cursor: "pointer",
+            fontSize: "0.875rem",
+            fontWeight: 600,
+            fontFamily: "var(--font-sans)",
+          }}
+        >
+          <Shield size={16} style={{ color: "var(--accent-primary)" }} />
+          Role Permissions Guide
+          <span style={{ marginLeft: "auto", color: "var(--text-tertiary)" }}>
+            {showRoles ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </span>
+        </button>
+        {showRoles && (
+          <div style={{ padding: "0 1.25rem 1.25rem", borderTop: "1px solid var(--border-color)" }}>
+            <div
+              className="table-wrapper"
+              style={{ marginTop: "1rem", fontSize: "0.8125rem" }}
+            >
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ minWidth: 180 }}>Permission</th>
+                    <th style={{ textAlign: "center" }}>
+                      <span className="badge badge-error" style={{ fontSize: "0.6875rem" }}>Admin</span>
+                    </th>
+                    <th style={{ textAlign: "center" }}>
+                      <span className="badge badge-info" style={{ fontSize: "0.6875rem" }}>Developer</span>
+                    </th>
+                    <th style={{ textAlign: "center" }}>
+                      <span className="badge badge-warning" style={{ fontSize: "0.6875rem" }}>Viewer</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ["View dashboard & stats", true, "own", "own"],
+                    ["View issues & events", true, "own", "own"],
+                    ["Resolve / ignore issues", true, true, false],
+                    ["Create & edit projects", true, true, false],
+                    ["Delete projects", true, false, false],
+                    ["Manage users & roles", true, false, false],
+                    ["Assign users to projects", true, false, false],
+                    ["Configure settings (SMTP, General)", true, false, false],
+                    ["Invite users", true, false, false],
+                    ["Create API tokens", true, true, false],
+                    ["Edit own profile", true, true, true],
+                  ].map(([label, admin, dev, viewer], i) => (
+                    <tr key={i}>
+                      <td style={{ color: "var(--text-secondary)" }}>{label as string}</td>
+                      {[admin, dev, viewer].map((val, j) => (
+                        <td key={j} style={{ textAlign: "center" }}>
+                          {val === true ? (
+                            <span style={{ color: "var(--accent-success)", fontSize: "1rem" }}>✓</span>
+                          ) : val === "own" ? (
+                            <span
+                              style={{
+                                color: "var(--accent-primary)",
+                                fontSize: "0.6875rem",
+                                fontWeight: 600,
+                              }}
+                            >
+                              own
+                            </span>
+                          ) : (
+                            <span style={{ color: "var(--text-tertiary)", fontSize: "1rem" }}>—</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p
+              className="text-muted"
+              style={{ fontSize: "0.75rem", marginTop: "0.75rem", lineHeight: 1.5 }}
+            >
+              <strong style={{ color: "var(--text-secondary)" }}>"own"</strong> = scoped to
+              assigned projects only. Admins have full access to all data.
+            </p>
+          </div>
+        )}
       </div>
 
       {users.length === 0 && pendingInvites.length === 0 ? (
