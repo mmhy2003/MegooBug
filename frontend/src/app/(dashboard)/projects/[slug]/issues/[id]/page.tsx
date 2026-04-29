@@ -67,16 +67,19 @@ export default function IssueDetailPage({
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("stacktrace");
   const [titleExpanded, setTitleExpanded] = useState(false);
+  const [userRole, setUserRole] = useState<string>("");
 
   useEffect(() => {
     async function load() {
       try {
-        const [issueData, eventsData] = await Promise.all([
+        const [issueData, eventsData, me] = await Promise.all([
           api.get<Issue>(`/api/v1/issues/${id}`),
           api.get<EventList>(`/api/v1/issues/${id}/events?limit=20`),
+          api.get<{ role: string }>("/api/v1/users/me"),
         ]);
         setIssue(issueData);
         setEvents(eventsData.items);
+        setUserRole(me.role);
       } catch {
         router.push(`/projects/${slug}`);
       } finally {
@@ -303,26 +306,29 @@ export default function IssueDetailPage({
           </div>
         </div>
 
-        <div className="issue-actions">
-          {issue.status !== "resolved" && (
-            <button className="btn btn-primary" onClick={() => updateStatus("resolved")}>
-              <CheckCircle size={16} />
-              Resolve
-            </button>
-          )}
-          {issue.status === "resolved" && (
-            <button className="btn btn-secondary" onClick={() => updateStatus("unresolved")}>
-              <XCircle size={16} />
-              Unresolve
-            </button>
-          )}
-          {issue.status !== "ignored" && (
-            <button className="btn btn-ghost" onClick={() => updateStatus("ignored")}>
-              <Eye size={16} />
-              Ignore
-            </button>
-          )}
-        </div>
+        {/* Action buttons — only for admin and developer */}
+        {(userRole === "admin" || userRole === "developer") && (
+          <div className="issue-actions">
+            {issue.status !== "resolved" && (
+              <button className="btn btn-primary" onClick={() => updateStatus("resolved")}>
+                <CheckCircle size={16} />
+                Resolve
+              </button>
+            )}
+            {issue.status === "resolved" && (
+              <button className="btn btn-secondary" onClick={() => updateStatus("unresolved")}>
+                <XCircle size={16} />
+                Unresolve
+              </button>
+            )}
+            {issue.status !== "ignored" && (
+              <button className="btn btn-ghost" onClick={() => updateStatus("ignored")}>
+                <Eye size={16} />
+                Ignore
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tabs */}

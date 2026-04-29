@@ -22,6 +22,7 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [userRole, setUserRole] = useState("");
   const { lastMessage } = useWS();
 
   async function loadProjects() {
@@ -37,6 +38,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     loadProjects();
+    api.get<{ role: string }>("/api/v1/users/me").then((me) => setUserRole(me.role)).catch(() => {});
   }, []);
 
   // Real-time: increment unresolved_count on project card when new issue arrives
@@ -77,30 +79,38 @@ export default function ProjectsPage() {
     <div>
       <div className="page-header">
         <h1 className="page-title">Projects</h1>
-        <button
-          className="btn btn-primary"
-          id="create-project-btn"
-          onClick={() => setShowCreate(true)}
-        >
-          <Plus size={16} />
-          Create Project
-        </button>
-      </div>
-
-      {projects.length === 0 ? (
-        <div className="card empty-state">
-          <FolderKanban size={48} className="empty-state-icon" />
-          <h3 style={{ marginBottom: "0.5rem" }}>No projects yet</h3>
-          <p className="text-muted" style={{ marginBottom: "1rem" }}>
-            Create your first project to start tracking errors.
-          </p>
+        {(userRole === "admin" || userRole === "developer") && (
           <button
             className="btn btn-primary"
+            id="create-project-btn"
             onClick={() => setShowCreate(true)}
           >
             <Plus size={16} />
             Create Project
           </button>
+        )}
+      </div>
+
+      {projects.length === 0 ? (
+        <div className="card empty-state">
+          <FolderKanban size={48} className="empty-state-icon" />
+          <h3 style={{ marginBottom: "0.5rem" }}>
+            {userRole === "viewer" ? "No projects assigned" : "No projects yet"}
+          </h3>
+          <p className="text-muted" style={{ marginBottom: "1rem" }}>
+            {userRole === "viewer"
+              ? "Ask an admin to assign you to a project."
+              : "Create your first project to start tracking errors."}
+          </p>
+          {(userRole === "admin" || userRole === "developer") && (
+            <button
+              className="btn btn-primary"
+              onClick={() => setShowCreate(true)}
+            >
+              <Plus size={16} />
+              Create Project
+            </button>
+          )}
         </div>
       ) : (
         <div

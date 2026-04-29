@@ -6,8 +6,9 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import CurrentUser
+from app.dependencies import require_developer_or_above
 from app.models.api_token import ApiToken
+from app.models.user import User
 from app.schemas.token import TokenCreate, TokenResponse, TokenCreatedResponse
 from app.services.token import generate_api_token
 
@@ -16,7 +17,7 @@ router = APIRouter()
 
 @router.get("", response_model=list[TokenResponse])
 async def list_tokens(
-    current_user: CurrentUser,
+    current_user: User = Depends(require_developer_or_above),
     db: AsyncSession = Depends(get_db),
 ):
     """List all API tokens for the current user."""
@@ -31,7 +32,7 @@ async def list_tokens(
 @router.post("", response_model=TokenCreatedResponse, status_code=status.HTTP_201_CREATED)
 async def create_token(
     body: TokenCreate,
-    current_user: CurrentUser,
+    current_user: User = Depends(require_developer_or_above),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new API token. The raw token is returned only once."""
@@ -67,7 +68,7 @@ async def create_token(
 @router.delete("/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_token(
     token_id: UUID,
-    current_user: CurrentUser,
+    current_user: User = Depends(require_developer_or_above),
     db: AsyncSession = Depends(get_db),
 ):
     """Revoke (delete) an API token."""

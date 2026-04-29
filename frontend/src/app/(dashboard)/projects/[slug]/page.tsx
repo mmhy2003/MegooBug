@@ -379,7 +379,9 @@ export default function ProjectDetailPage({
 
       {/* Tabs */}
       <div className="tabs">
-        {["overview", "issues", "settings"].map((tab) => (
+        {["overview", "issues",
+          ...((currentUser?.role === "admin" || currentUser?.role === "developer") ? ["settings"] : []),
+        ].map((tab) => (
           <button
             key={tab}
             className={`tab ${activeTab === tab ? "active" : ""}`}
@@ -505,7 +507,7 @@ export default function ProjectDetailPage({
                     <th>Events</th>
                     <th>Status</th>
                     <th>Last Seen</th>
-                    <th>Actions</th>
+                    {(currentUser?.role === "admin" || currentUser?.role === "developer") && <th>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -548,35 +550,37 @@ export default function ProjectDetailPage({
                       <td className="text-muted">
                         {formatRelativeTime(issue.last_seen)}
                       </td>
-                      <td>
-                        {issue.status === "unresolved" && (
-                          <button
-                            className="btn btn-ghost"
-                            style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
-                            onClick={() => updateIssueStatus(issue.id, "resolved")}
-                          >
-                            Resolve
-                          </button>
-                        )}
-                        {issue.status === "resolved" && (
-                          <button
-                            className="btn btn-ghost"
-                            style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
-                            onClick={() => updateIssueStatus(issue.id, "unresolved")}
-                          >
-                            Unresolve
-                          </button>
-                        )}
-                        {issue.status !== "ignored" && (
-                          <button
-                            className="btn btn-ghost"
-                            style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
-                            onClick={() => updateIssueStatus(issue.id, "ignored")}
-                          >
-                            Ignore
-                          </button>
-                        )}
-                      </td>
+                      {(currentUser?.role === "admin" || currentUser?.role === "developer") && (
+                        <td>
+                          {issue.status === "unresolved" && (
+                            <button
+                              className="btn btn-ghost"
+                              style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                              onClick={() => updateIssueStatus(issue.id, "resolved")}
+                            >
+                              Resolve
+                            </button>
+                          )}
+                          {issue.status === "resolved" && (
+                            <button
+                              className="btn btn-ghost"
+                              style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                              onClick={() => updateIssueStatus(issue.id, "unresolved")}
+                            >
+                              Unresolve
+                            </button>
+                          )}
+                          {issue.status !== "ignored" && (
+                            <button
+                              className="btn btn-ghost"
+                              style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                              onClick={() => updateIssueStatus(issue.id, "ignored")}
+                            >
+                              Ignore
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -733,25 +737,27 @@ export default function ProjectDetailPage({
             )}
           </div>
 
-          {/* Danger Zone */}
-          <div
-            className="card"
-            style={{ borderColor: "rgba(255, 51, 102, 0.3)" }}
-          >
-            <h3 style={{ fontSize: "1rem", marginBottom: "0.5rem", color: "var(--accent-error)" }}>
-              Danger Zone
-            </h3>
-            <p className="text-muted" style={{ fontSize: "0.8125rem", marginBottom: "1rem" }}>
-              Deleting a project will permanently remove all its issues and events.
-            </p>
-            <button
-              className="btn btn-danger"
-              onClick={() => setShowDeleteConfirm(true)}
+          {/* Danger Zone — admin only */}
+          {currentUser?.role === "admin" && (
+            <div
+              className="card"
+              style={{ borderColor: "rgba(255, 51, 102, 0.3)" }}
             >
-              <Trash2 size={16} />
-              Delete Project
-            </button>
-          </div>
+              <h3 style={{ fontSize: "1rem", marginBottom: "0.5rem", color: "var(--accent-error)" }}>
+                Danger Zone
+              </h3>
+              <p className="text-muted" style={{ fontSize: "0.8125rem", marginBottom: "1rem" }}>
+                Deleting a project will permanently remove all its issues and events.
+              </p>
+              <button
+                className="btn btn-danger"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                <Trash2 size={16} />
+                Delete Project
+              </button>
+            </div>
+          )}
         </div>
       )}
 
