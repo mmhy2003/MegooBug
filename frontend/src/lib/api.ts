@@ -53,9 +53,10 @@ class ApiClient {
         return retryResponse.json();
       }
 
-      // Redirect to login
+      // Redirect to login, preserving current path for redirect-back
       if (typeof window !== "undefined") {
-        window.location.href = "/login";
+        const currentPath = window.location.pathname;
+        window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;
       }
       throw new ApiError(401, "Session expired");
     }

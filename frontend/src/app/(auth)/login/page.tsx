@@ -2,13 +2,15 @@
 
 import { useState, FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Bug, Eye, EyeOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("redirect") || "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -22,7 +24,7 @@ export default function LoginPage() {
 
     try {
       await api.post("/api/v1/auth/login", { email, password });
-      router.push("/dashboard");
+      router.push(redirectTo);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

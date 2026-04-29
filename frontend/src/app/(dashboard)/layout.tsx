@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
@@ -22,6 +22,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<CurrentUser | null>(null);
@@ -34,7 +35,7 @@ export default function DashboardLayout({
         const userData = await api.get<CurrentUser>("/api/v1/users/me");
         setUser(userData);
       } catch {
-        router.push("/login");
+        router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
         return;
       } finally {
         setLoading(false);
