@@ -18,7 +18,12 @@ logger = get_logger("app")
 
 
 async def _auto_migrate():
-    """Run Alembic migrations on startup to keep the schema up to date."""
+    """Run Alembic migrations on startup to keep the schema up to date.
+
+    Also ensures all tables exist via create_all as a safety net — the
+    initial Alembic migration is a no-op baseline, so on a completely
+    fresh database the tables wouldn't otherwise be created.
+    """
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
 
@@ -33,6 +38,15 @@ async def _auto_migrate():
         await loop.run_in_executor(executor, _run_upgrade)
 
     logger.info("Database migrations applied")
+
+    # Import all models so Base.metadata knows about every table
+    import app.models  # noqa: F401
+
+    # Safety net: create any tables that migrations didn't cover
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    logger.info("Database schema verified")
 
 
 async def _auto_seed():
