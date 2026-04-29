@@ -28,7 +28,7 @@ interface CreatedToken extends ApiToken {
 }
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState("general");
+  const [activeTab, setActiveTab] = useState("profile");
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
   // General settings
@@ -221,12 +221,27 @@ export default function SettingsPage() {
     return new Date(iso).toLocaleDateString();
   }
 
-  const tabs = [
-    { key: "general", label: "General" },
-    { key: "smtp", label: "Email / SMTP" },
-    { key: "profile", label: "Profile" },
-    { key: "apikeys", label: "API Keys" },
+  const allTabs = [
+    { key: "general", label: "General", roles: ["admin"] },
+    { key: "smtp", label: "Email / SMTP", roles: ["admin"] },
+    { key: "profile", label: "Profile", roles: ["admin", "developer", "viewer"] },
+    { key: "apikeys", label: "API Keys", roles: ["admin", "developer"] },
   ];
+
+  const userRole = profile?.role || "viewer";
+  const visibleTabs = allTabs.filter((tab) => tab.roles.includes(userRole));
+
+  // If active tab is not visible for this role, switch to the first visible tab
+  const resolvedTab = visibleTabs.find((t) => t.key === activeTab)
+    ? activeTab
+    : visibleTabs[0]?.key || "profile";
+
+  // Sync state if the resolved tab differs (e.g. after profile loads)
+  useEffect(() => {
+    if (resolvedTab !== activeTab) {
+      setActiveTab(resolvedTab);
+    }
+  }, [resolvedTab, activeTab]);
 
   return (
     <div>
@@ -235,10 +250,10 @@ export default function SettingsPage() {
       </div>
 
       <div className="tabs">
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.key}
-            className={`tab ${activeTab === tab.key ? "active" : ""}`}
+            className={`tab ${resolvedTab === tab.key ? "active" : ""}`}
             onClick={() => setActiveTab(tab.key)}
           >
             {tab.label}
