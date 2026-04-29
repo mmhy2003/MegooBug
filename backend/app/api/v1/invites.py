@@ -22,29 +22,26 @@ async def create_invite(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Create an invite link for a new user (admin only)."""
+    """Create an invite link for a new user (admin only).
+    If a pending invite already exists for this email, it is replaced."""
     # Check if email is already registered
     result = await db.execute(select(User).where(User.email == data.email))
     if result.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
+            detail="A user with this email is already registered",
         )
 
-    # Check if there's already a pending invite for this email
+    # Delete any existing pending invites for this email (allows re-invite)
     result = await db.execute(
         select(Invite).where(
             Invite.email == data.email,
             Invite.accepted_at.is_(None),
-            Invite.expires_at > datetime.now(timezone.utc),
         )
     )
-    existing = result.scalar_one_or_none()
-    if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A pending invite already exists for this email",
-        )
+    existing = result.scalars().all()
+    for old_invite in existing:
+        await db.delete(old_invite)
 
     invite = Invite(
         email=data.email,

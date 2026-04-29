@@ -1,8 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { UserPlus, Loader2, Users as UsersIcon, FolderKanban } from "lucide-react";
-import { api } from "@/lib/api";
+import {
+  UserPlus,
+  Loader2,
+  Users as UsersIcon,
+  FolderKanban,
+  Mail,
+  Trash2,
+  RotateCw,
+  Copy,
+  Check,
+} from "lucide-react";
+import { api, ApiError } from "@/lib/api";
 import { InviteUserModal } from "@/components/invite-user-modal";
 import { ManageProjectsModal } from "@/components/manage-projects-modal";
 
@@ -15,26 +25,49 @@ interface UserItem {
   created_at: string;
 }
 
+interface InviteItem {
+  id: string;
+  email: string;
+  role: string;
+  token: string;
+  expires_at: string;
+  created_at: string;
+}
+
 interface UserListResponse {
   users: UserItem[];
   total: number;
 }
 
+interface InviteListResponse {
+  invites: InviteItem[];
+  total: number;
+}
+
 export default function UsersPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [invites, setInvites] = useState<InviteItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [manageUser, setManageUser] = useState<UserItem | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadUsers();
+    loadAll();
   }, []);
 
-  async function loadUsers() {
+  async function loadAll() {
+    setLoading(true);
     try {
-      const data = await api.get<UserListResponse>("/api/v1/users");
-      setUsers(data.users);
+      const [userData, inviteData] = await Promise.all([
+        api.get<UserListResponse>("/api/v1/users"),
+        api.get<InviteListResponse>("/api/v1/invites"),
+      ]);
+      setUsers(userData.users);
+      setInvites(inviteData.invites);
     } catch {
       // Might fail for non-admin users
     } finally {
@@ -60,20 +93,61 @@ export default function UsersPage() {
     setUpdatingId(null);
   }
 
-  function getRoleBadge(role: string) {
-    switch (role) {
-      case "admin":
-        return "badge badge-error";
-      case "developer":
-        return "badge badge-info";
-      default:
-        return "badge badge-warning";
-    }
+  async function resendInvite(invite: InviteItem) {
+    setResendingId(invite.id);
+    try {
+      const newInvite = await api.post<InviteItem>("/api/v1/invites", {
+        email: invite.email,
+        role: invite.role,
+      });
+      // Replace old invite in list
+      setInvites((prev) =>
+        prev.map((i) => (i.id === invite.id ? newInvite : i))
+      );
+    } catch {}
+    setResendingId(null);
+  }
+
+  async function revokeInvite(inviteId: string) {
+    setRevokingId(inviteId);
+    try {
+      await api.delete(`/api/v1/invites/${inviteId}`);
+      setInvites((prev) => prev.filter((i) => i.id !== inviteId));
+    } catch {}
+    setRevokingId(null);
+  }
+
+  function getInviteLink(token: string) {
+    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+    return `${baseUrl}/register?token=${token}`;
+  }
+
+  async function copyInviteLink(invite: InviteItem) {
+    try {
+      await navigator.clipboard.writeText(getInviteLink(invite.token));
+      setCopiedInviteId(invite.id);
+      setTimeout(() => setCopiedInviteId(null), 2000);
+    } catch {}
+  }
+
+  function isExpired(expiresAt: string) {
+    return new Date(expiresAt) < new Date();
   }
 
   function formatDate(isoString: string) {
     if (!isoString) return "—";
     return new Date(isoString).toLocaleDateString();
+  }
+
+  function formatRelativeTime(isoString: string) {
+    if (!isoString) return "";
+    const diff = new Date(isoString).getTime() - Date.now();
+    if (diff <= 0) return "Expired";
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    if (hours < 1) return "< 1h left";
+    if (hours < 24) return `${hours}h left`;
+    const days = Math.floor(hours / 24);
+    return `${days}d left`;
   }
 
   if (loading) {
@@ -83,6 +157,10 @@ export default function UsersPage() {
       </div>
     );
   }
+
+  // Filter out expired invites for display (only show pending)
+  const pendingInvites = invites.filter((i) => !isExpired(i.expires_at));
+  const expiredInvites = invites.filter((i) => isExpired(i.expires_at));
 
   return (
     <div>
@@ -98,7 +176,7 @@ export default function UsersPage() {
         </button>
       </div>
 
-      {users.length === 0 ? (
+      {users.length === 0 && pendingInvites.length === 0 ? (
         <div className="card empty-state">
           <UsersIcon size={48} className="empty-state-icon" />
           <h3 style={{ marginBottom: "0.5rem" }}>No users found</h3>
@@ -118,6 +196,7 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody>
+              {/* Active / Registered users */}
               {users.map((user) => (
                 <tr key={user.id}>
                   <td>
@@ -170,6 +249,184 @@ export default function UsersPage() {
                   </td>
                 </tr>
               ))}
+
+              {/* Pending Invites */}
+              {pendingInvites.map((invite) => (
+                <tr key={`invite-${invite.id}`} style={{ opacity: 0.85 }}>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <div
+                        className="user-avatar"
+                        style={{
+                          width: 32,
+                          height: 32,
+                          fontSize: "0.75rem",
+                          background: "rgba(var(--accent-primary-rgb), 0.15)",
+                          color: "var(--accent-primary)",
+                          border: "1px dashed rgba(var(--accent-primary-rgb), 0.4)",
+                        }}
+                      >
+                        <Mail size={14} />
+                      </div>
+                      <span
+                        style={{
+                          fontWeight: 500,
+                          fontStyle: "italic",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        Pending invite
+                      </span>
+                    </div>
+                  </td>
+                  <td className="text-muted">{invite.email}</td>
+                  <td>
+                    <span
+                      className={
+                        invite.role === "developer"
+                          ? "badge badge-info"
+                          : "badge badge-warning"
+                      }
+                    >
+                      {invite.role}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="badge badge-invited">
+                      <Mail size={10} />
+                      invited
+                    </span>
+                  </td>
+                  <td className="text-muted" style={{ fontSize: "0.8125rem" }}>
+                    <span title={`Expires: ${new Date(invite.expires_at).toLocaleString()}`}>
+                      {formatRelativeTime(invite.expires_at)}
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: "0.375rem" }}>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                        onClick={() => copyInviteLink(invite)}
+                        title="Copy invite link"
+                      >
+                        {copiedInviteId === invite.id ? (
+                          <Check size={13} />
+                        ) : (
+                          <Copy size={13} />
+                        )}
+                        {copiedInviteId === invite.id ? "Copied" : "Link"}
+                      </button>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                        onClick={() => resendInvite(invite)}
+                        disabled={resendingId === invite.id}
+                        title="Resend invite (generates new token)"
+                      >
+                        {resendingId === invite.id ? (
+                          <Loader2 size={13} className="spin" />
+                        ) : (
+                          <RotateCw size={13} />
+                        )}
+                        Resend
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-danger-text"
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                        onClick={() => revokeInvite(invite.id)}
+                        disabled={revokingId === invite.id}
+                        title="Revoke invite"
+                      >
+                        {revokingId === invite.id ? (
+                          <Loader2 size={13} className="spin" />
+                        ) : (
+                          <Trash2 size={13} />
+                        )}
+                        Revoke
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+
+              {/* Expired Invites (dimmed, optional) */}
+              {expiredInvites.map((invite) => (
+                <tr key={`expired-${invite.id}`} style={{ opacity: 0.45 }}>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <div
+                        className="user-avatar"
+                        style={{
+                          width: 32,
+                          height: 32,
+                          fontSize: "0.75rem",
+                          background: "rgba(var(--accent-error-rgb, 255,51,102), 0.1)",
+                          color: "var(--accent-error)",
+                          border: "1px dashed rgba(var(--accent-error-rgb, 255,51,102), 0.3)",
+                        }}
+                      >
+                        <Mail size={14} />
+                      </div>
+                      <span
+                        style={{
+                          fontWeight: 500,
+                          fontStyle: "italic",
+                          color: "var(--text-tertiary)",
+                        }}
+                      >
+                        Expired invite
+                      </span>
+                    </div>
+                  </td>
+                  <td className="text-muted">{invite.email}</td>
+                  <td>
+                    <span className="badge" style={{ opacity: 0.6 }}>
+                      {invite.role}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="badge badge-expired">
+                      expired
+                    </span>
+                  </td>
+                  <td className="text-muted" style={{ fontSize: "0.8125rem" }}>
+                    {formatDate(invite.created_at)}
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: "0.375rem" }}>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                        onClick={() => resendInvite(invite)}
+                        disabled={resendingId === invite.id}
+                        title="Resend invite (generates new token)"
+                      >
+                        {resendingId === invite.id ? (
+                          <Loader2 size={13} className="spin" />
+                        ) : (
+                          <RotateCw size={13} />
+                        )}
+                        Re-invite
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-danger-text"
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                        onClick={() => revokeInvite(invite.id)}
+                        disabled={revokingId === invite.id}
+                        title="Delete expired invite"
+                      >
+                        {revokingId === invite.id ? (
+                          <Loader2 size={13} className="spin" />
+                        ) : (
+                          <Trash2 size={13} />
+                        )}
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -178,7 +435,7 @@ export default function UsersPage() {
       {showInvite && (
         <InviteUserModal
           onClose={() => setShowInvite(false)}
-          onCreated={() => loadUsers()}
+          onCreated={() => loadAll()}
         />
       )}
 

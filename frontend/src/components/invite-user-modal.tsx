@@ -39,9 +39,16 @@ export function InviteUserModal({ onClose, onCreated }: Props) {
       onCreated?.(invite);
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.message);
+        // Map API errors to user-friendly messages
+        if (err.status === 409) {
+          setError("This email address is already registered.");
+        } else if (err.status === 422) {
+          setError("Please enter a valid email address.");
+        } else {
+          setError(err.message || "Something went wrong. Please try again.");
+        }
       } else {
-        setError("Failed to create invite");
+        setError("Failed to create invite. Please try again.");
       }
     } finally {
       setLoading(false);

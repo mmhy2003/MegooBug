@@ -1507,6 +1507,22 @@ tr:hover td {
   overflow-y: auto;
 }
 
+/* ── Invite Status Badges ── */
+.badge-invited {
+  background: rgba(var(--accent-primary-rgb), 0.1);
+  color: var(--accent-primary);
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.2);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.badge-expired {
+  background: rgba(255, 51, 102, 0.08);
+  color: var(--accent-error);
+  border: 1px solid rgba(255, 51, 102, 0.15);
+}
+
 /* ── Responsive: Tablet ── */
 @media (max-width: 1024px) {
   .stat-grid {
