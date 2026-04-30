@@ -60,7 +60,7 @@ async def _auto_seed():
         result = await session.execute(
             select(User).where(User.role == UserRole.ADMIN)
         )
-        if result.scalar_one_or_none() is not None:
+        if result.scalars().first() is not None:
             logger.debug("Admin user already exists, skipping seed")
             return
 
