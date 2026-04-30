@@ -328,13 +328,15 @@ async def process_event(
         event_ts = datetime.now(timezone.utc)
 
     # Deduplicate: find existing issue by fingerprint + project
+    # Use .first() to handle potential duplicate rows that may exist before
+    # the unique constraint migration is applied.
     result = await db.execute(
         select(Issue).where(
             Issue.fingerprint == fingerprint,
             Issue.project_id == project.id,
-        )
+        ).order_by(Issue.first_seen)
     )
-    issue = result.scalar_one_or_none()
+    issue = result.scalars().first()
 
     is_new = issue is None
     is_regression = False
