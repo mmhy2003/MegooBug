@@ -100,12 +100,108 @@ async def lifespan(app: FastAPI):
         logger.exception("Failed to initialise Redis — aborting startup")
         raise
 
+    # Meilisearch: configure indexes and bootstrap existing data
+    try:
+        await _init_meilisearch()
+    except Exception:
+        logger.exception("Failed to initialise Meilisearch — search may be unavailable")
+
     logger.info("%s ready to accept connections", settings.APP_NAME)
     yield
 
     await close_redis()
     await engine.dispose()
     logger.info("%s shut down", settings.APP_NAME)
+
+
+async def _init_meilisearch():
+    """Configure Meilisearch indexes and bootstrap any un-indexed data.
+
+    Runs at startup to ensure:
+    1. All indexes exist with correct filterable/sortable attributes.
+    2. Existing projects and issues in PostgreSQL are indexed.
+    """
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    import meilisearch
+
+    from sqlalchemy import select
+    from app.database import async_session_factory
+    from app.models.project import Project
+    from app.models.issue import Issue
+
+    client = meilisearch.Client(
+        settings.MEILISEARCH_URL,
+        settings.MEILISEARCH_MASTER_KEY,
+    )
+
+    # ── Configure indexes (sync Meilisearch calls in executor) ──
+    def _configure():
+        for name in ("issues", "events", "projects"):
+            try:
+                client.create_index(name, {"primaryKey": "id"})
+            except Exception:
+                pass  # Index already exists
+
+        client.index("issues").update_filterable_attributes(["project_id", "status", "level"])
+        client.index("issues").update_sortable_attributes(["last_seen", "event_count"])
+        client.index("events").update_filterable_attributes(["project_id", "issue_id"])
+        client.index("events").update_sortable_attributes(["timestamp"])
+        client.index("projects").update_filterable_attributes(["id"])
+        client.index("projects").update_sortable_attributes(["created_at"])
+
+    loop = asyncio.get_running_loop()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        await loop.run_in_executor(executor, _configure)
+
+    logger.info("Meilisearch indexes configured")
+
+    # ── Bootstrap existing data via async DB session ──
+    async with async_session_factory() as db:
+        # Projects
+        result = await db.execute(select(Project))
+        projects = result.scalars().all()
+        if projects:
+            docs = [
+                {
+                    "id": str(p.id),
+                    "name": p.name,
+                    "slug": p.slug,
+                    "platform": p.platform or "",
+                    "created_at": p.created_at.isoformat() if p.created_at else "",
+                }
+                for p in projects
+            ]
+            await loop.run_in_executor(
+                None,
+                lambda: client.index("projects").add_documents(docs, primary_key="id"),
+            )
+            logger.info("Bootstrapped %d projects into Meilisearch", len(docs))
+
+        # Issues
+        result = await db.execute(select(Issue))
+        issues = result.scalars().all()
+        if issues:
+            docs = [
+                {
+                    "id": str(i.id),
+                    "project_id": str(i.project_id),
+                    "title": i.title,
+                    "fingerprint": i.fingerprint,
+                    "status": i.status.value,
+                    "level": i.level.value,
+                    "event_count": i.event_count,
+                    "first_seen": i.first_seen.isoformat() if i.first_seen else "",
+                    "last_seen": i.last_seen.isoformat() if i.last_seen else "",
+                    "metadata": i.metadata_ or {},
+                }
+                for i in issues
+            ]
+            await loop.run_in_executor(
+                None,
+                lambda: client.index("issues").add_documents(docs, primary_key="id"),
+            )
+            logger.info("Bootstrapped %d issues into Meilisearch", len(docs))
 
 
 app = FastAPI(

@@ -32,7 +32,7 @@ services:
       - megoobug
 
   meilisearch:
-    image: getmeili/meilisearch:v1.7
+    image: getmeili/meilisearch:v1.12
     environment:
       MEILI_MASTER_KEY: ${MEILISEARCH_MASTER_KEY:-change-me-to-a-random-32-char-string}
       MEILI_ENV: development

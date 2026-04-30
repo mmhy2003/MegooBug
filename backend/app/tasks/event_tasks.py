@@ -156,6 +156,7 @@ def _configure_indexes(client):
     client.index("issues").update_sortable_attributes(["last_seen", "event_count"])
     client.index("events").update_filterable_attributes(["project_id", "issue_id"])
     client.index("events").update_sortable_attributes(["timestamp"])
+    client.index("projects").update_filterable_attributes(["id"])
     client.index("projects").update_sortable_attributes(["created_at"])
 
 
