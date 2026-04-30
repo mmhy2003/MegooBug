@@ -1,6 +1,6 @@
 # MegooBug — Product Requirements Document
 
-> **Version:** 1.2 · **Date:** 2026-04-29 · **Status:** Draft · **License:** MIT (Open Source)
+> **Version:** 1.3 · **Date:** 2026-04-30 · **Status:** Draft · **License:** MIT (Open Source)
 
 ---
 
@@ -35,7 +35,7 @@
 | Database | **PostgreSQL 16** |
 | Cache / Pub-Sub | **Redis 7** |
 | Task Queue | **Celery** (Redis broker) |
-| Search Engine | **Meilisearch** (full-text search) |
+| Search Engine | **Meilisearch v1.12+** (full-text search, federated multi-search) |
 | Containerization | **Docker** + **Docker Compose** |
 
 ---
@@ -62,7 +62,7 @@
 1. **Ingest** — Client SDKs POST to `/api/{project_id}/store/` or `/api/{project_id}/envelope/` (Sentry-compatible endpoints). Auth via DSN public key in `X-Sentry-Auth` header, `?sentry_key=` query param, or envelope header DSN.
 2. **Process** — FastAPI validates, normalizes, decompresses (gzip auto-detection), parses length-prefixed envelope items, and groups the event into an **Issue**.
 3. **Persist** — Event + Issue stored in PostgreSQL; counters updated in Redis.
-4. **Index** — Celery task indexes the issue/event into Meilisearch for instant search.
+4. **Index** — Celery task indexes the issue/event into Meilisearch for instant search. On startup, the backend auto-bootstraps all existing projects and issues into Meilisearch.
 5. **Notify** — In-app notifications created for project members. **WebSocket push** via Redis pub/sub delivers instant updates to connected clients.
 6. **Display** — Next.js frontend receives real-time updates via WebSocket; falls back to 30s polling when disconnected.
 
@@ -206,13 +206,14 @@ Services: `frontend`, `backend`, `celery-worker`, `postgres`, `redis`, `meilisea
 - `WATCHFILES_FORCE_POLLING=true` for backend.
 - Debug ports exposed.
 
-### 4.6 Auto-Migration & Auto-Seed
+### 4.6 Auto-Migration, Auto-Seed & Auto-Index
 
-The backend **automatically runs database migrations** (`Base.metadata.create_all`) and **seeds the initial admin user** on every startup via the FastAPI lifespan handler. This eliminates the need for manual `make migrate` / `make seed` steps.
+The backend **automatically runs database migrations** (`Base.metadata.create_all`) and **seeds the initial admin user** on every startup via the FastAPI lifespan handler. It also **initializes Meilisearch indexes** and bootstraps existing data. This eliminates the need for manual `make migrate` / `make seed` / `make reindex` steps.
 
 - Tables are created/verified on each boot (idempotent).
 - Admin user is seeded from `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` env vars only if no admin exists.
 - Alembic remains available as a backup for complex schema changes (`make migrate`).
+- **Meilisearch Bootstrap:** On every startup, the backend configures all search indexes (issues, events, projects) with correct filterable and sortable attributes, then indexes all existing projects and issues from PostgreSQL. This ensures search works immediately after deployment without manual `make reindex`.
 
 ### 4.7 Structured Logging
 
@@ -403,11 +404,13 @@ Tab-based layout with active tab highlighting. **Role-based tab visibility:**
 |-------|---------------|------------|----------|
 | `issues` | title, fingerprint, metadata, level, status | project_id, status, level | last_seen, event_count |
 | `events` | event_id, data (message, stack trace, tags) | project_id, issue_id | timestamp |
-| `projects` | name, slug, platform | — | created_at |
+| `projects` | name, slug, platform | id | created_at |
 
-- Indexes are updated asynchronously via **Celery tasks** on create/update/delete.
-- Full re-index available via `make reindex` Makefile target.
+- **Auto-bootstrap:** On every backend startup, all Meilisearch indexes are configured with correct filterable/sortable attributes, and all existing projects and issues are indexed from PostgreSQL. This ensures search works out-of-the-box without manual intervention.
+- Indexes are also updated asynchronously via **Celery tasks** on individual create/update events.
+- Full re-index available via `make reindex` Makefile target (useful after bulk DB changes).
 - **Project-scoped:** Non-admin users' search results are filtered by their assigned project IDs. Meilisearch queries include `project_id` filters for issues and `id` filters for projects.
+- **Version requirement:** Meilisearch v1.12+ is required — the Python SDK uses federated `multi_search` which is not supported in older versions.
 
 ---
 
@@ -492,7 +495,7 @@ Generated per-project. Displayed in project settings with copy-to-clipboard.
 1. **Auth** — Validate DSN public key against project.
 2. **Parse** — Decode envelope/JSON payload, extract exception, breadcrumbs, contexts.
 3. **Fingerprint** — Group by exception type + top frame (configurable).
-4. **Dedup** — If existing issue matches fingerprint → increment count, update `last_seen`.
+4. **Dedup** — If existing issue matches fingerprint → increment count, update `last_seen`. A `UNIQUE(fingerprint, project_id)` constraint on the `issues` table prevents duplicate issues under concurrent event load.
 5. **Store** — Persist raw event JSON + normalized issue record.
 6. **Side-effects** — Trigger notification tasks if issue is new or regressed.
 
@@ -648,12 +651,13 @@ issues
 ├── id (UUID, PK)
 ├── project_id (FK)
 ├── title (str)
-├── fingerprint (str, indexed)
+├── fingerprint (str)
 ├── status (enum: unresolved, resolved, ignored)
 ├── level (enum: fatal, error, warning, info)
 ├── first_seen / last_seen
 ├── event_count (int)
-└── metadata (JSONB)
+├── metadata (JSONB)
+└── UNIQUE(fingerprint, project_id)   # prevents duplicate issues under concurrent load
 
 events
 ├── id (UUID, PK)
@@ -943,6 +947,7 @@ ADMIN_NAME=Admin
 | **Phase 5.5 — Real-Time** ✅ | WebSocket endpoint (`/ws/notifications`) with JWT cookie auth, Redis pub/sub infrastructure (3 channel tiers: user/project/global), `WebSocketProvider` React context, `useWS()` hook with auto-reconnect + exponential backoff, real-time updates on dashboard (live stat counters + issue table), projects page (live unresolved badge), project detail (live issue list with prepend/update), notification bell (instant push), Sentry envelope ingestion hardening (gzip, length-prefixed items, DSN from envelope headers), unresolved issue count badge on project cards | 1 week |
 | **Phase 6 — Project RBAC** ✅ | **Project-scoped access control:** `get_user_project_ids()` and `check_project_access()` dependencies in backend enforce membership across all API endpoints (v1 projects/issues/stats/search + Sentry compat `/api/0/`). Dashboard stats scoped to user's projects. Search results filtered by membership via Meilisearch filters. WebSocket events filtered client-side. **Member management UI:** Members section in Project Detail → Settings tab (list/add/remove members), "Manage Projects" modal on Users page (assign/unassign projects per user). CSS for member list items. Admins bypass all restrictions. | 1 week |
 | **Phase 7 — Hardening & Detail** ✅ | **Issue Detail V2:** 5-tab layout (Stack Trace with expandable source context + in_app badges, Breadcrumbs trail, Context with HTTP request/user/device/runtime/extra/modules, Events, Details). **Email Notifications:** CyberPunk-themed HTML email on new issue/regression with deep links, level badges, project/environment context. **Login Redirect:** `?redirect=` parameter preserving original destination across auth flows (layout guard + API 401 + session expiry). **RBAC UI polish:** role-based Settings tab visibility (admin: all, developer: Profile+API Keys, viewer: Profile only), Create Project button hidden for viewers, Resolve/Ignore actions hidden for viewers, role permissions documentation on Users page. | 1 week |
+| **Phase 7.5 — Search & Stability** ✅ | **Meilisearch v1.12 upgrade** (v1.7 → v1.12 for federated multi-search support). **Startup bootstrap:** auto-configure indexes + auto-index all existing projects/issues on every boot (eliminates manual `make reindex`). **Issue deduplication hardening:** `UNIQUE(fingerprint, project_id)` constraint + Alembic migration to merge duplicates. **Projects search fix:** added `id` to filterable attributes on the `projects` index. **Dependency:** added `psycopg2-binary` for Celery sync DB access. | 1 day |
 | **Phase 8 — Release** | Documentation, README, contributing guide, CI/CD, initial release | 1 week |
 
 ---
