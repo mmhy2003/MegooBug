@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Bell, Check, CheckCheck, AlertTriangle, RefreshCw, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { useWS } from "@/components/websocket-provider";
@@ -14,6 +14,7 @@ interface NotificationItem {
   is_read: boolean;
   issue_id: string | null;
   project_id: string | null;
+  project_slug: string | null;
   created_at: string;
 }
 
@@ -29,6 +30,7 @@ export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
   const { lastMessage, status: wsStatus } = useWS();
 
   // Poll unread count every 30s (fallback when WebSocket is disconnected)
@@ -67,6 +69,7 @@ export function NotificationBell() {
         is_read: false,
         issue_id: n.issue_id || null,
         project_id: n.project_id || null,
+        project_slug: n.project_slug || null,
         created_at: n.created_at || new Date().toISOString(),
       };
       return [item, ...prev].slice(0, 20); // Keep max 20
@@ -230,6 +233,10 @@ export function NotificationBell() {
                   }}
                   onClick={() => {
                     if (!n.is_read) markAsRead(n.id);
+                    if (n.project_slug && n.issue_id) {
+                      setOpen(false);
+                      router.push(`/projects/${n.project_slug}/issues/${n.issue_id}`);
+                    }
                   }}
                 >
                   <div style={{ paddingTop: "0.125rem" }}>

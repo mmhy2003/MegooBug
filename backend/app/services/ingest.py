@@ -551,6 +551,7 @@ async def _create_notifications(
                             "body": issue.title[:300],
                             "issue_id": str(issue.id),
                             "project_id": str(project.id),
+                            "project_slug": project.slug,
                             "created_at": datetime.now(timezone.utc).isoformat(),
                         },
                     })

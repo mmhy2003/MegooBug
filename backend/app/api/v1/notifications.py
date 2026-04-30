@@ -29,13 +29,10 @@ async def list_notifications(
     offset: int = Query(0, ge=0),
 ):
     """List notifications for the current user."""
-    query = select(Notification).where(Notification.user_id == current_user.id)
-    count_query = select(func.count(Notification.id)).where(
-        Notification.user_id == current_user.id
-    )
+    base_filter = Notification.user_id == current_user.id
+    count_query = select(func.count(Notification.id)).where(base_filter)
 
     if unread_only:
-        query = query.where(Notification.is_read == False)
         count_query = count_query.where(Notification.is_read == False)
 
     total_result = await db.execute(count_query)
@@ -44,15 +41,25 @@ async def list_notifications(
     # Unread count (always returned)
     unread_result = await db.execute(
         select(func.count(Notification.id)).where(
-            Notification.user_id == current_user.id,
+            base_filter,
             Notification.is_read == False,
         )
     )
     unread_count = unread_result.scalar()
 
+    # Query notifications with project slug via outer join
+    from app.models.project import Project
+
+    query = (
+        select(Notification, Project.slug.label("project_slug"))
+        .outerjoin(Project, Notification.project_id == Project.id)
+        .where(base_filter)
+    )
+    if unread_only:
+        query = query.where(Notification.is_read == False)
     query = query.order_by(Notification.created_at.desc()).limit(limit).offset(offset)
     result = await db.execute(query)
-    items = result.scalars().all()
+    rows = result.all()
 
     return {
         "items": [
@@ -64,9 +71,10 @@ async def list_notifications(
                 "is_read": n.is_read,
                 "issue_id": str(n.issue_id) if n.issue_id else None,
                 "project_id": str(n.project_id) if n.project_id else None,
+                "project_slug": project_slug,
                 "created_at": n.created_at.isoformat(),
             }
-            for n in items
+            for n, project_slug in rows
         ],
         "total": total,
         "unread_count": unread_count,
