@@ -120,6 +120,9 @@ async def update_notification_preferences(
 
     Body: {"preferences": {"new_issue": {"inapp": true, "email": false}, ...}}
     """
+    import json
+    from sqlalchemy.orm.attributes import flag_modified
+
     incoming = body.get("preferences", {})
     if not isinstance(incoming, dict):
         raise HTTPException(
@@ -127,7 +130,8 @@ async def update_notification_preferences(
             detail="preferences must be an object",
         )
 
-    current_prefs = dict(current_user.notification_preferences or {})
+    # Deep-copy so SQLAlchemy detects the mutation (shallow copy shares nested dicts)
+    current_prefs = json.loads(json.dumps(current_user.notification_preferences or {}))
 
     for key in _VALID_PREF_KEYS:
         if key in incoming and isinstance(incoming[key], dict):
@@ -138,6 +142,7 @@ async def update_notification_preferences(
             current_prefs[key] = entry
 
     current_user.notification_preferences = current_prefs
+    flag_modified(current_user, "notification_preferences")
     await db.flush()
     await db.refresh(current_user)
 
