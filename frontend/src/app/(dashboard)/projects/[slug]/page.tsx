@@ -83,7 +83,7 @@ export default function ProjectDetailPage({
   const [trend, setTrend] = useState<TrendPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("unresolved");
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -475,7 +475,7 @@ export default function ProjectDetailPage({
         <div>
           {/* Filters */}
           <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem" }}>
-            {["", "unresolved", "resolved", "ignored"].map((s) => (
+            {["unresolved", "resolved", "ignored", ""].map((s) => (
               <button
                 key={s}
                 className={`btn ${statusFilter === s ? "btn-primary" : "btn-ghost"}`}
