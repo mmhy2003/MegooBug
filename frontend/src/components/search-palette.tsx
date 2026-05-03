@@ -27,11 +27,18 @@ interface SearchResponse {
 
 interface Props {
   projectMap?: Map<string, { slug: string; name: string }>;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function SearchPalette({ projectMap }: Props) {
+export function SearchPalette({ projectMap, open: controlledOpen, onOpenChange }: Props) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
+  const setOpen = useCallback((value: boolean) => {
+    if (onOpenChange) onOpenChange(value);
+    setInternalOpen(value);
+  }, [onOpenChange]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,7 +59,7 @@ export function SearchPalette({ projectMap }: Props) {
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [setOpen]);
 
   // Auto-focus input when opened
   useEffect(() => {

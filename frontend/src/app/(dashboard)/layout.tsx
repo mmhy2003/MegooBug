@@ -101,8 +101,8 @@ export default function DashboardLayout({
           <main className="app-content">{children}</main>
         </div>
 
-        {/* Global Search Palette (Ctrl+K) */}
-        {searchOpen && <SearchPalette />}
+        {/* Global Search Palette (Ctrl+K / header click) */}
+        <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
       </div>
     </WebSocketProvider>
   );
