@@ -90,6 +90,60 @@ async def update_password(
     return {"message": "Password updated"}
 
 
+# ── Notification Preferences ──
+
+_VALID_PREF_KEYS = {"new_issue", "regression", "assigned"}
+_VALID_CHANNELS = {"inapp", "email"}
+_DEFAULT_PREF = {"inapp": True, "email": True}
+
+
+@router.get("/me/notification-preferences")
+async def get_notification_preferences(
+    current_user: CurrentUser,
+):
+    """Get current user's notification preferences."""
+    prefs = current_user.notification_preferences or {}
+    # Ensure all keys have defaults
+    result = {}
+    for key in _VALID_PREF_KEYS:
+        result[key] = {**_DEFAULT_PREF, **prefs.get(key, {})}
+    return {"preferences": result}
+
+
+@router.put("/me/notification-preferences")
+async def update_notification_preferences(
+    body: dict,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update current user's notification preferences.
+
+    Body: {"preferences": {"new_issue": {"inapp": true, "email": false}, ...}}
+    """
+    incoming = body.get("preferences", {})
+    if not isinstance(incoming, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="preferences must be an object",
+        )
+
+    current_prefs = dict(current_user.notification_preferences or {})
+
+    for key in _VALID_PREF_KEYS:
+        if key in incoming and isinstance(incoming[key], dict):
+            entry = current_prefs.get(key, dict(_DEFAULT_PREF))
+            for ch in _VALID_CHANNELS:
+                if ch in incoming[key] and isinstance(incoming[key][ch], bool):
+                    entry[ch] = incoming[key][ch]
+            current_prefs[key] = entry
+
+    current_user.notification_preferences = current_prefs
+    await db.flush()
+    await db.refresh(current_user)
+
+    return {"preferences": current_prefs}
+
+
 @router.patch("/{user_id}/role", response_model=UserResponse)
 async def change_user_role(
     user_id: uuid.UUID,

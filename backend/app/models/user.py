@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import enum
 
 from sqlalchemy import String, Boolean, Enum, DateTime
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -31,6 +31,16 @@ class User(Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    notification_preferences: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=lambda: {
+            "new_issue": {"inapp": True, "email": True},
+            "regression": {"inapp": True, "email": True},
+            "assigned": {"inapp": True, "email": True},
+        },
+        server_default='{"new_issue":{"inapp":true,"email":true},"regression":{"inapp":true,"email":true},"assigned":{"inapp":true,"email":true}}',
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

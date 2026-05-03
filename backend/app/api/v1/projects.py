@@ -277,6 +277,54 @@ async def add_member(
     db.add(member)
     await db.flush()
 
+    # ── Send ASSIGNED notification ──
+    try:
+        from app.models.notification import Notification, NotificationType
+
+        # Check user's notification preferences
+        prefs = user.notification_preferences or {}
+        assigned_pref = prefs.get("assigned", {"inapp": True, "email": True})
+
+        if assigned_pref.get("inapp", True):
+            notification = Notification(
+                user_id=user.id,
+                project_id=project.id,
+                type=NotificationType.ASSIGNED,
+                title=f"Added to {project.name}",
+                body=f"You were added to the project '{project.name}' by {current_user.name}",
+            )
+            db.add(notification)
+            await db.flush()
+
+            # Real-time WebSocket push
+            try:
+                from app.services.pubsub import publish_to_user
+                await publish_to_user(str(user.id), {
+                    "type": "new_notification",
+                    "notification": {
+                        "type": NotificationType.ASSIGNED.value,
+                        "title": f"Added to {project.name}",
+                        "body": f"You were added to the project '{project.name}' by {current_user.name}",
+                        "project_id": str(project.id),
+                        "project_slug": project.slug,
+                        "created_at": member.joined_at.isoformat() if member.joined_at else None,
+                    },
+                })
+            except Exception:
+                pass
+
+        if assigned_pref.get("email", True):
+            try:
+                from app.services.email import send_invite_email
+                # No dedicated "assigned to project" email template, so we skip email for now
+                # Email notification for project assignment can be added later
+                pass
+            except Exception:
+                pass
+
+    except Exception as e:
+        logger.warning("Failed to send assignment notification: %s", e)
+
     return ProjectMemberResponse(
         user_id=user.id,
         user_name=user.name,

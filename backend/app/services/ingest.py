@@ -497,11 +497,24 @@ async def _create_notifications(
     issue: Issue,
     notification_type: NotificationType,
 ) -> None:
-    """Create in-app notifications and send email alerts for project members."""
+    """Create in-app notifications and send email alerts for project members.
+
+    Respects both per-project member toggles (notify_inapp / notify_email)
+    AND per-user notification_preferences for the specific notification type.
+    """
     try:
         from app.models.user import User
 
-        # Get all project members who have notify_inapp OR notify_email enabled
+        # Map notification type enum to preference key
+        _type_to_pref_key = {
+            NotificationType.NEW_ISSUE: "new_issue",
+            NotificationType.REGRESSION: "regression",
+            NotificationType.ASSIGNED: "assigned",
+            NotificationType.MENTION: "mention",
+        }
+        pref_key = _type_to_pref_key.get(notification_type, "new_issue")
+
+        # Get all project members
         result = await db.execute(
             select(ProjectMember).where(
                 ProjectMember.project_id == project.id,
@@ -511,19 +524,52 @@ async def _create_notifications(
 
         type_label = "New issue" if notification_type == NotificationType.NEW_ISSUE else "Regression"
 
-        # Separate lists for in-app and email notifications
-        inapp_user_ids = []
-        email_user_ids = []
+        # Collect user IDs that are eligible per project-member settings
+        candidate_inapp_ids = []
+        candidate_email_ids = []
 
         if members:
             for m in members:
                 if m.notify_inapp:
-                    inapp_user_ids.append(m.user_id)
+                    candidate_inapp_ids.append(m.user_id)
                 if m.notify_email:
-                    email_user_ids.append(m.user_id)
+                    candidate_email_ids.append(m.user_id)
         else:
             # Fallback: notify the project creator via in-app
-            inapp_user_ids = [project.created_by]
+            candidate_inapp_ids = [project.created_by]
+
+        # Fetch user preferences for all candidate users
+        all_candidate_ids = list(set(candidate_inapp_ids + candidate_email_ids))
+        if all_candidate_ids:
+            user_result = await db.execute(
+                select(User.id, User.email, User.notification_preferences).where(
+                    User.id.in_(all_candidate_ids)
+                )
+            )
+            user_rows = {row[0]: {"email": row[1], "prefs": row[2] or {}} for row in user_result.all()}
+        else:
+            user_rows = {}
+
+        # Filter by user notification preferences
+        inapp_user_ids = []
+        email_user_ids = []
+
+        for uid in candidate_inapp_ids:
+            user_info = user_rows.get(uid)
+            if user_info is None:
+                continue
+            user_pref = user_info["prefs"].get(pref_key, {})
+            # Default to True if preference not set
+            if user_pref.get("inapp", True):
+                inapp_user_ids.append(uid)
+
+        for uid in candidate_email_ids:
+            user_info = user_rows.get(uid)
+            if user_info is None:
+                continue
+            user_pref = user_info["prefs"].get(pref_key, {})
+            if user_pref.get("email", True):
+                email_user_ids.append(uid)
 
         # ── In-app notifications ──
         for user_id in inapp_user_ids:
@@ -563,12 +609,6 @@ async def _create_notifications(
             try:
                 from app.services.email import send_issue_notification_email
 
-                # Fetch user emails
-                user_result = await db.execute(
-                    select(User.id, User.email).where(User.id.in_(email_user_ids))
-                )
-                user_emails = {row[0]: row[1] for row in user_result.all()}
-
                 # Extract environment from issue metadata
                 environment = ""
                 if issue.metadata_ and isinstance(issue.metadata_, dict):
@@ -577,7 +617,7 @@ async def _create_notifications(
                 is_regression = notification_type == NotificationType.REGRESSION
 
                 for user_id in email_user_ids:
-                    email_addr = user_emails.get(user_id)
+                    email_addr = user_rows.get(user_id, {}).get("email")
                     if not email_addr:
                         continue
                     try:
@@ -607,4 +647,5 @@ async def _create_notifications(
         )
     except Exception as e:
         logger.error("Failed to create notifications: %s", e)
+
 
