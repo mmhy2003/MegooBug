@@ -338,10 +338,25 @@ def _project_to_sentry(project: Project) -> dict:
     }
 
 
+def _make_short_id(issue: Issue, project: Project | None = None) -> str:
+    """Build a Sentry-format shortId like 'FILES-BACKEND-42'.
+
+    The Sentry MCP SDK expects shortIds in the format PROJECT-ALPHANUMERIC.
+    We use the project slug (uppercased) + issue_number.
+    Falls back to truncated UUID hex if issue_number is not set yet.
+    """
+    slug_part = (project.slug if project else "UNKNOWN").upper()
+    if issue.issue_number:
+        return f"{slug_part}-{issue.issue_number}"
+    # Fallback for issues created before the issue_number migration
+    return f"{slug_part}-{str(issue.id).split('-')[0].upper()}"
+
+
 def _issue_to_sentry(issue: Issue, project: Project | None = None) -> dict:
     """Convert Issue to Sentry-compatible JSON.
 
     Fixes for Sentry MCP Zod schema (IssueSchema):
+    - shortId: Sentry format 'PROJECT-123' (not truncated UUID)
     - firstSeen/lastSeen: z.string().datetime().nullable() — needs Z suffix
     - userCount: z.union([z.string(), z.number()]) — required, was missing
     - permalink: z.string().url() — must be valid URL, not empty string
@@ -350,7 +365,7 @@ def _issue_to_sentry(issue: Issue, project: Project | None = None) -> dict:
     """
     return {
         "id": str(issue.id),
-        "shortId": str(issue.id)[:8].upper(),
+        "shortId": _make_short_id(issue, project),
         "title": issue.title,
         "culprit": None,
         "permalink": _build_permalink(issue),
@@ -591,14 +606,41 @@ async def _resolve_issue(
     current_user,
     db: AsyncSession,
 ) -> Issue:
-    """Resolve an issue by UUID string. Raises 404 if not found or no access."""
+    """Resolve an issue by UUID, numeric ID, or Sentry shortId.
+
+    Supported formats:
+    - Full UUID: '0dcae490-c3e2-4b5e-86b8-98e5f7e3ad10'
+    - Numeric issue number: '42'
+    - Sentry shortId: 'FILES-BACKEND-42'
+    """
+    issue = None
+
+    # 1) Try full UUID
     try:
         uid = UUID(issue_id)
+        result = await db.execute(select(Issue).where(Issue.id == uid))
+        issue = result.scalar_one_or_none()
     except ValueError:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        pass
 
-    result = await db.execute(select(Issue).where(Issue.id == uid))
-    issue = result.scalar_one_or_none()
+    # 2) Try numeric issue_number
+    if issue is None and issue_id.isdigit():
+        result = await db.execute(
+            select(Issue).where(Issue.issue_number == int(issue_id))
+        )
+        issue = result.scalar_one_or_none()
+
+    # 3) Try Sentry shortId format: 'PROJECT-SLUG-42'
+    if issue is None and "-" in issue_id:
+        # The numeric part is the last segment after the final hyphen
+        parts = issue_id.rsplit("-", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            num = int(parts[1])
+            result = await db.execute(
+                select(Issue).where(Issue.issue_number == num)
+            )
+            issue = result.scalar_one_or_none()
+
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
     if not await check_project_access(current_user, issue.project_id, db):

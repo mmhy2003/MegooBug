@@ -177,7 +177,7 @@ def _issue_detail_to_sentry(issue: Issue, project: Project | None = None) -> dic
     """
     return {
         "id": str(issue.id),
-        "shortId": str(issue.id)[:8].upper(),
+        "shortId": f"{(project.slug if project else 'UNKNOWN').upper()}-{issue.issue_number or str(issue.id).split('-')[0].upper()}",
         "title": issue.title,
         "culprit": None,
         "permalink": _build_permalink(issue),
