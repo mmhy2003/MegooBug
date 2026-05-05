@@ -209,3 +209,51 @@ async def check_project_access(
 
     return False
 
+
+async def check_project_developer_access(
+    user: User,
+    project_id: uuid.UUID,
+    db: AsyncSession,
+) -> bool:
+    """Check if a user has developer-level access to a specific project.
+
+    Returns True if any of:
+    1. User is a global admin
+    2. User is a global developer with project access (direct or team)
+    3. User is a member of the project's assigned team (regardless of global role)
+       — team membership grants developer-level permissions.
+    """
+    if user.role == UserRole.ADMIN:
+        return True
+
+    from app.models.project import Project, ProjectMember
+    from app.models.team import TeamMember
+
+    # Check team membership first — this grants developer-level regardless of global role
+    team_result = await db.execute(
+        select(Project.team_id).where(Project.id == project_id)
+    )
+    team_id = team_result.scalar_one_or_none()
+    if team_id is not None:
+        tm_result = await db.execute(
+            select(TeamMember).where(
+                TeamMember.team_id == team_id,
+                TeamMember.user_id == user.id,
+            )
+        )
+        if tm_result.scalar_one_or_none() is not None:
+            return True
+
+    # Fall back to global developer role + project access
+    if user.role == UserRole.DEVELOPER:
+        result = await db.execute(
+            select(ProjectMember).where(
+                ProjectMember.project_id == project_id,
+                ProjectMember.user_id == user.id,
+            )
+        )
+        if result.scalar_one_or_none() is not None:
+            return True
+
+    return False
+

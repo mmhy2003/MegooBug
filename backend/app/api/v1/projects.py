@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.dependencies import CurrentUser, require_admin, require_developer_or_above, get_user_project_ids, check_project_access
+from app.dependencies import CurrentUser, require_admin, require_developer_or_above, get_user_project_ids, check_project_access, check_project_developer_access
 from app.models.project import Project, ProjectMember
 from app.models.user import User
 from app.schemas.project import (
@@ -149,18 +149,18 @@ async def get_project(
 async def update_project(
     slug: str,
     body: ProjectUpdate,
-    current_user: User = Depends(require_developer_or_above),
+    current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """Update a project. Admin or Developer required. Must be a member."""
+    """Update a project. Requires developer-level access (global role or team membership)."""
     result = await db.execute(
         select(Project).where(Project.slug == slug)
     )
     project = result.scalar_one_or_none()
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    if not await check_project_access(current_user, project.id, db):
-        raise HTTPException(status_code=404, detail="Project not found")
+    if not await check_project_developer_access(current_user, project.id, db):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     if body.name is not None:
         project.name = body.name

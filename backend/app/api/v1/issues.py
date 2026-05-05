@@ -5,11 +5,10 @@ from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import CurrentUser, require_developer_or_above, check_project_access
+from app.dependencies import CurrentUser, check_project_access, check_project_developer_access
 from app.models.project import Project
 from app.models.issue import Issue, IssueStatus, IssueLevel
 from app.models.event import Event
-from app.models.user import User
 from app.schemas.issue import IssueResponse, IssueUpdate, IssueListResponse
 from app.schemas.event import EventResponse, EventListResponse
 from app.logging import get_logger
@@ -117,18 +116,18 @@ async def get_issue(
 async def update_issue(
     issue_id: UUID,
     body: IssueUpdate,
-    current_user: User = Depends(require_developer_or_above),
+    current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """Update issue status. Must have access to the issue's project."""
+    """Update issue status. Requires developer-level access (global role or team membership)."""
     result = await db.execute(
         select(Issue).where(Issue.id == issue_id)
     )
     issue = result.scalar_one_or_none()
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
-    if not await check_project_access(current_user, issue.project_id, db):
-        raise HTTPException(status_code=404, detail="Issue not found")
+    if not await check_project_developer_access(current_user, issue.project_id, db):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     old_status = issue.status
     issue.status = body.status
