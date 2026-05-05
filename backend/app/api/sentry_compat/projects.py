@@ -7,9 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import CurrentUser, get_user_project_ids, check_project_access
+from app.dependencies import CurrentUser, get_user_project_ids, check_project_access, check_project_developer_access
 from app.models.project import Project
 from app.models.issue import Issue, IssueStatus
+
+import secrets
 
 router = APIRouter()
 
@@ -64,6 +66,46 @@ async def get_project(
         raise HTTPException(status_code=404, detail="Project not found")
     if not await check_project_access(current_user, project.id, db):
         raise HTTPException(status_code=404, detail="Project not found")
+    return _project_to_sentry(project)
+
+
+@router.put("/projects/{org}/{slug}/")
+async def update_project(
+    org: str,
+    slug: str,
+    body: dict,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a project. Used by MCP's update_project tool.
+
+    The MCP sends: {"name": "...", "slug": "...", "platform": "..."}
+    """
+    result = await db.execute(
+        select(Project).where(Project.slug == slug)
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not await check_project_developer_access(current_user, project.id, db):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    if "name" in body and body["name"]:
+        project.name = body["name"].strip()
+    if "slug" in body and body["slug"]:
+        new_slug = body["slug"].strip()
+        # Check slug uniqueness
+        existing = await db.execute(
+            select(Project).where(Project.slug == new_slug, Project.id != project.id)
+        )
+        if existing.scalar_one_or_none() is not None:
+            raise HTTPException(status_code=409, detail="Slug already in use")
+        project.slug = new_slug
+    if "platform" in body:
+        project.platform = body["platform"]
+
+    await db.flush()
+    await db.refresh(project)
     return _project_to_sentry(project)
 
 
@@ -133,9 +175,37 @@ async def list_project_keys(
     if not await check_project_access(current_user, project.id, db):
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Build DSN URL
+    return [_build_key_response(project)]
+
+
+@router.post("/projects/{org}/{slug}/keys/", status_code=201)
+async def create_project_key(
+    org: str,
+    slug: str,
+    body: dict,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a DSN key for a project. Used by MCP's create_dsn tool.
+
+    MegooBug projects have a single DSN key. This endpoint returns
+    the existing key (idempotent) since multi-key support isn't needed.
+    """
+    result = await db.execute(
+        select(Project).where(Project.slug == slug)
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not await check_project_developer_access(current_user, project.id, db):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    return _build_key_response(project)
+
+
+def _build_key_response(project: Project) -> dict:
+    """Build a Sentry-compatible ClientKeySchema response."""
     base_url = settings.APP_URL.rstrip("/")
-    # Parse protocol for DSN format
     if "://" in base_url:
         protocol, host_part = base_url.split("://", 1)
     else:
@@ -143,7 +213,7 @@ async def list_project_keys(
 
     dsn_public = f"{protocol}://{project.dsn_public_key}@{host_part}/{project.id}"
 
-    return [{
+    return {
         "id": project.dsn_public_key,
         "name": "Default",
         "public": project.dsn_public_key,
@@ -156,7 +226,7 @@ async def list_project_keys(
             "secret": "",
             "csp": "",
         },
-    }]
+    }
 
 
 def _project_to_sentry(project: Project) -> dict:
