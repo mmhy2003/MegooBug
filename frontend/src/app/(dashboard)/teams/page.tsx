@@ -13,6 +13,7 @@ import {
   X,
   ChevronDown,
   ChevronRight,
+  AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -58,6 +59,7 @@ export default function TeamsPage() {
   const [editingTeam, setEditingTeam] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteConfirmTeam, setDeleteConfirmTeam] = useState<Team | null>(null);
   const [userRole, setUserRole] = useState("");
 
   useEffect(() => {
@@ -381,9 +383,7 @@ export default function TeamsPage() {
                           style={{ padding: "0.35rem", fontSize: "0.75rem" }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (confirm(`Delete team "${team.name}"? Projects will be unassigned but not deleted.`)) {
-                              deleteTeam(team.slug);
-                            }
+                            setDeleteConfirmTeam(team);
                           }}
                           disabled={deletingTeam === team.slug}
                           title="Delete team"
@@ -546,6 +546,66 @@ export default function TeamsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Delete Team Confirmation Modal */}
+      {deleteConfirmTeam && (
+        <div className="confirm-overlay" onClick={() => setDeleteConfirmTeam(null)}>
+          <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: "var(--radius-full, 50%)",
+                background: "rgba(255, 51, 102, 0.1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 1rem",
+              }}
+            >
+              <AlertTriangle size={24} style={{ color: "var(--accent-error)" }} />
+            </div>
+            <h3 style={{ marginBottom: "0.5rem", textAlign: "center" }}>Delete Team</h3>
+            <p
+              className="text-muted"
+              style={{ fontSize: "0.875rem", marginBottom: "0.5rem", textAlign: "center" }}
+            >
+              Are you sure you want to delete <strong>{deleteConfirmTeam.name}</strong>?
+            </p>
+            <p
+              className="text-muted"
+              style={{ fontSize: "0.8125rem", marginBottom: "1.5rem", textAlign: "center", opacity: 0.8 }}
+            >
+              {deleteConfirmTeam.project_count > 0
+                ? `${deleteConfirmTeam.project_count} project${deleteConfirmTeam.project_count > 1 ? "s" : ""} will be unassigned from this team.`
+                : "No projects are currently assigned to this team."}
+              {" "}Members will be removed from the team. This action cannot be undone.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setDeleteConfirmTeam(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={() => {
+                  deleteTeam(deleteConfirmTeam.slug);
+                  setDeleteConfirmTeam(null);
+                }}
+                disabled={deletingTeam === deleteConfirmTeam.slug}
+              >
+                {deletingTeam === deleteConfirmTeam.slug ? (
+                  <><Loader2 size={16} className="spin" /> Deleting...</>
+                ) : (
+                  <><Trash2 size={16} /> Delete Team</>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
