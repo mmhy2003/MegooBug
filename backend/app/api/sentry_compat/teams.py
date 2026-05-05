@@ -21,8 +21,10 @@ from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser
 from app.models.team import Team, TeamMember, TeamRole
-from app.models.project import Project
+from app.models.project import Project, ProjectMember
 from app.models.user import UserRole
+
+import secrets
 
 router = APIRouter()
 
@@ -147,3 +149,91 @@ async def get_team(
         "name": settings.APP_NAME,
     }
     return resp
+
+
+@router.post("/teams/{org}/{team_slug}/projects/", status_code=201)
+async def create_project_for_team(
+    org: str,
+    team_slug: str,
+    body: dict,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a project under a team. Used by MCP's create_project tool.
+
+    The MCP sends: {"name": "project-name", "platform": "python"}
+    """
+    # Only admins and developers can create projects
+    if current_user.role not in (UserRole.ADMIN, UserRole.DEVELOPER):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    # Verify team exists
+    team_result = await db.execute(
+        select(Team).where(Team.slug == team_slug)
+    )
+    team = team_result.scalar_one_or_none()
+    if team is None:
+        raise HTTPException(status_code=404, detail="Team not found")
+
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Project name is required")
+
+    platform = body.get("platform")
+
+    # Generate unique slug
+    base_slug = slugify(name)
+    slug = base_slug
+    counter = 1
+    while True:
+        existing = await db.execute(
+            select(Project).where(Project.slug == slug)
+        )
+        if existing.scalar_one_or_none() is None:
+            break
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+
+    project = Project(
+        name=name,
+        slug=slug,
+        platform=platform,
+        dsn_public_key=secrets.token_hex(16),
+        created_by=current_user.id,
+        team_id=team.id,
+    )
+    db.add(project)
+    await db.flush()
+    await db.refresh(project)
+
+    # Auto-add creator as project member
+    member = ProjectMember(
+        project_id=project.id,
+        user_id=current_user.id,
+    )
+    db.add(member)
+    await db.flush()
+
+    # Build DSN for response
+    base_url = settings.APP_URL.rstrip("/")
+    if "://" in base_url:
+        protocol, host_part = base_url.split("://", 1)
+    else:
+        protocol, host_part = "https", base_url
+
+    dsn_public = f"{protocol}://{project.dsn_public_key}@{host_part}/{project.project_number}"
+
+    return {
+        "id": str(project.id),
+        "slug": project.slug,
+        "name": project.name,
+        "platform": project.platform or None,
+        "dateCreated": _fmt_dt(project.created_at),
+        "status": "active",
+        "organization": {"id": "1", "slug": "megoobug", "name": settings.APP_NAME},
+        "team": _team_to_sentry(team),
+        "teams": [_team_to_sentry(team)],
+        "keys": [{
+            "dsn": {"public": dsn_public},
+        }],
+    }
