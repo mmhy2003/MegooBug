@@ -172,7 +172,7 @@ async def list_org_events(
     sort: str | None = None,
     per_page: int = Query(default=10, le=100),
     statsPeriod: str | None = None,
-    project: int | None = None,
+    project: str | None = None,
 ):
     """Sentry-compatible events/discover endpoint.
 
@@ -219,13 +219,9 @@ async def list_org_events(
             q = q.where(Issue.project_id.in_(project_ids))
 
         if project:
-            # Need to resolve numeric project ID to UUID
-            proj_result = await db.execute(
-                select(Project).where(Project.project_number == project)
-            )
-            proj = proj_result.scalar_one_or_none()
-            if proj:
-                q = q.where(Issue.project_id == proj.id)
+            resolved = await _resolve_project_filter(project, db)
+            if resolved:
+                q = q.where(Issue.project_id == resolved)
 
         if start_time:
             q = q.where(Issue.last_seen >= start_time)
@@ -281,7 +277,11 @@ async def list_org_events(
             .limit(per_page)
         )
 
-        if project_ids is not None:
+        if project:
+            resolved = await _resolve_project_filter(project, db)
+            if resolved:
+                q = q.where(Event.project_id == resolved)
+        elif project_ids is not None:
             q = q.where(Event.project_id.in_(project_ids))
 
         if start_time:
@@ -336,6 +336,25 @@ def _project_to_sentry(project: Project) -> dict:
         "status": "active",
         "organization": {"id": "1", "slug": "megoobug", "name": settings.APP_NAME},
     }
+
+
+async def _resolve_project_filter(project_param: str, db: AsyncSession) -> UUID | None:
+    """Resolve a project filter param (UUID string, numeric ID, or slug) to a project UUID."""
+    # 1) Try UUID
+    try:
+        uid = UUID(project_param)
+        result = await db.execute(select(Project.id).where(Project.id == uid))
+        pid = result.scalar_one_or_none()
+        if pid:
+            return pid
+    except ValueError:
+        pass
+
+    # 2) Try slug
+    result = await db.execute(
+        select(Project.id).where(Project.slug == project_param)
+    )
+    return result.scalar_one_or_none()
 
 
 def _make_short_id(issue: Issue, project: Project | None = None) -> str:
