@@ -1,5 +1,6 @@
 from app.models.user import User
 from app.models.project import Project, ProjectMember
+from app.models.team import Team, TeamMember
 from app.models.issue import Issue
 from app.models.event import Event
 from app.models.notification import Notification
@@ -11,6 +12,8 @@ __all__ = [
     "User",
     "Project",
     "ProjectMember",
+    "Team",
+    "TeamMember",
     "Issue",
     "Event",
     "Notification",

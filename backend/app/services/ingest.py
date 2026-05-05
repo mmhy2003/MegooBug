@@ -522,6 +522,17 @@ async def _create_notifications(
         )
         members = result.scalars().all()
 
+        # Also get team members if project belongs to a team
+        team_member_ids = set()
+        if project.team_id:
+            from app.models.team import TeamMember
+            tm_result = await db.execute(
+                select(TeamMember.user_id).where(
+                    TeamMember.team_id == project.team_id,
+                )
+            )
+            team_member_ids = set(tm_result.scalars().all())
+
         type_label = "New issue" if notification_type == NotificationType.NEW_ISSUE else "Regression"
 
         # Collect user IDs that are eligible per project-member settings
@@ -537,6 +548,13 @@ async def _create_notifications(
         else:
             # Fallback: notify the project creator via in-app
             candidate_inapp_ids = [project.created_by]
+
+        # Add team members (deduplicated — team members get both inapp + email by default)
+        existing_ids = set(candidate_inapp_ids + candidate_email_ids)
+        for tm_uid in team_member_ids:
+            if tm_uid not in existing_ids:
+                candidate_inapp_ids.append(tm_uid)
+                candidate_email_ids.append(tm_uid)
 
         # Fetch user preferences for all candidate users
         all_candidate_ids = list(set(candidate_inapp_ids + candidate_email_ids))

@@ -133,22 +133,36 @@ async def get_user_project_ids(
     user: User,
     db: AsyncSession,
 ) -> set[uuid.UUID] | None:
-    """Return the set of project IDs the user is a member of.
+    """Return the set of project IDs the user has access to.
 
     Returns None for admins (meaning "all projects" — no filtering needed).
-    Returns an empty set if the user has no memberships.
+    Includes projects from:
+    1. Direct project membership (ProjectMember)
+    2. Team membership (TeamMember -> Team -> Project.team_id)
     """
     if user.role == UserRole.ADMIN:
         return None  # Admin sees everything
 
-    from app.models.project import ProjectMember
+    from app.models.project import Project, ProjectMember
+    from app.models.team import TeamMember
 
+    # Direct project memberships
     result = await db.execute(
         select(ProjectMember.project_id).where(
             ProjectMember.user_id == user.id
         )
     )
-    return set(result.scalars().all())
+    project_ids = set(result.scalars().all())
+
+    # Projects via team membership
+    team_result = await db.execute(
+        select(Project.id)
+        .join(TeamMember, TeamMember.team_id == Project.team_id)
+        .where(TeamMember.user_id == user.id, Project.team_id.isnot(None))
+    )
+    project_ids.update(team_result.scalars().all())
+
+    return project_ids
 
 
 async def check_project_access(
@@ -158,17 +172,40 @@ async def check_project_access(
 ) -> bool:
     """Check if a user has access to a specific project.
 
-    Admins always have access. Non-admins must be a project member.
+    Admins always have access. Non-admins need either:
+    1. Direct project membership, OR
+    2. Membership in the project's assigned team
     """
     if user.role == UserRole.ADMIN:
         return True
 
-    from app.models.project import ProjectMember
+    from app.models.project import Project, ProjectMember
+    from app.models.team import TeamMember
 
+    # Check direct membership
     result = await db.execute(
         select(ProjectMember).where(
             ProjectMember.project_id == project_id,
             ProjectMember.user_id == user.id,
         )
     )
-    return result.scalar_one_or_none() is not None
+    if result.scalar_one_or_none() is not None:
+        return True
+
+    # Check via team membership
+    team_result = await db.execute(
+        select(Project.team_id).where(Project.id == project_id)
+    )
+    team_id = team_result.scalar_one_or_none()
+    if team_id is not None:
+        tm_result = await db.execute(
+            select(TeamMember).where(
+                TeamMember.team_id == team_id,
+                TeamMember.user_id == user.id,
+            )
+        )
+        if tm_result.scalar_one_or_none() is not None:
+            return True
+
+    return False
+

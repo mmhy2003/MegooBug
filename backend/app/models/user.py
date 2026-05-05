@@ -53,6 +53,7 @@ class User(Base):
     # Relationships
     projects_created = relationship("Project", back_populates="creator")
     project_memberships = relationship("ProjectMember", back_populates="user")
+    team_memberships = relationship("TeamMember", back_populates="user")
     notifications = relationship("Notification", back_populates="user")
     invites_sent = relationship("Invite", back_populates="invited_by_user")
     api_tokens = relationship("ApiToken", back_populates="user", cascade="all, delete-orphan")

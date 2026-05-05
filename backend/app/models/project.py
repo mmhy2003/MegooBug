@@ -32,6 +32,9 @@ class Project(Base):
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -43,6 +46,7 @@ class Project(Base):
 
     # Relationships
     creator = relationship("User", back_populates="projects_created")
+    team = relationship("Team", back_populates="projects")
     members = relationship("ProjectMember", back_populates="project", cascade="all, delete-orphan")
     issues = relationship("Issue", back_populates="project", cascade="all, delete-orphan")
     events = relationship("Event", back_populates="project", cascade="all, delete-orphan")
