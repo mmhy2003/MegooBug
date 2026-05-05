@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import CurrentUser, get_user_project_ids, check_project_access
+from app.dependencies import CurrentUser, get_user_project_ids, check_project_access, check_project_developer_access
 from app.models.project import Project
 from app.models.issue import Issue, IssueStatus
 from app.models.event import Event
@@ -514,7 +514,7 @@ async def update_org_issue(
     db: AsyncSession = Depends(get_db),
 ):
     """Update issue (org-scoped). Used by MCP's update_issue tool."""
-    issue = await _resolve_issue(issue_id, current_user, db)
+    issue = await _resolve_issue(issue_id, current_user, db, require_write=True)
 
     if "status" in body:
         status_map = {
@@ -624,6 +624,7 @@ async def _resolve_issue(
     issue_id: str,
     current_user,
     db: AsyncSession,
+    require_write: bool = False,
 ) -> Issue:
     """Resolve an issue by UUID, numeric ID, or Sentry shortId.
 
@@ -631,6 +632,8 @@ async def _resolve_issue(
     - Full UUID: '0dcae490-c3e2-4b5e-86b8-98e5f7e3ad10'
     - Numeric issue number: '42'
     - Sentry shortId: 'FILES-BACKEND-42'
+
+    If require_write is True, checks developer-level access (not just read).
     """
     issue = None
 
@@ -662,7 +665,13 @@ async def _resolve_issue(
 
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
-    if not await check_project_access(current_user, issue.project_id, db):
-        raise HTTPException(status_code=404, detail="Issue not found")
+
+    if require_write:
+        if not await check_project_developer_access(current_user, issue.project_id, db):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    else:
+        if not await check_project_access(current_user, issue.project_id, db):
+            raise HTTPException(status_code=404, detail="Issue not found")
+
     return issue
 
