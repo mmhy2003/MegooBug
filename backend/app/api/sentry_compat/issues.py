@@ -1,19 +1,35 @@
 """Sentry-compatible issue and event endpoints under /api/0/."""
+from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, check_project_access
 from app.models.issue import Issue, IssueStatus
 from app.models.event import Event
+from app.models.project import Project
 from app.logging import get_logger
 
 logger = get_logger("api.sentry_compat.issues")
 
 router = APIRouter()
+
+
+def _fmt_dt(dt: datetime | None) -> str | None:
+    """Format a datetime to ISO 8601 with Z suffix for Sentry MCP Zod validation."""
+    if dt is None:
+        return None
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _build_permalink(issue: Issue) -> str:
+    """Build a valid permalink URL for an issue."""
+    base = settings.APP_URL.rstrip("/")
+    return f"{base}/issues/{issue.id}"
 
 
 @router.get("/issues/{issue_id}/")
@@ -31,7 +47,14 @@ async def get_issue(
         raise HTTPException(status_code=404, detail="Issue not found")
     if not await check_project_access(current_user, issue.project_id, db):
         raise HTTPException(status_code=404, detail="Issue not found")
-    return _issue_detail_to_sentry(issue)
+
+    # Fetch project for name/slug
+    proj_result = await db.execute(
+        select(Project).where(Project.id == issue.project_id)
+    )
+    project = proj_result.scalar_one_or_none()
+
+    return _issue_detail_to_sentry(issue, project)
 
 
 @router.put("/issues/{issue_id}/")
@@ -66,7 +89,14 @@ async def update_issue(
 
     await db.flush()
     await db.refresh(issue)
-    return _issue_detail_to_sentry(issue)
+
+    # Fetch project for name/slug
+    proj_result = await db.execute(
+        select(Project).where(Project.id == issue.project_id)
+    )
+    project = proj_result.scalar_one_or_none()
+
+    return _issue_detail_to_sentry(issue, project)
 
 
 @router.get("/issues/{issue_id}/events/")
@@ -74,6 +104,7 @@ async def list_issue_events(
     issue_id: UUID,
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=25, le=100),
 ):
     """List events for an issue in Sentry-compatible format."""
     result = await db.execute(
@@ -89,7 +120,7 @@ async def list_issue_events(
         select(Event)
         .where(Event.issue_id == issue_id)
         .order_by(Event.timestamp.desc())
-        .limit(25)
+        .limit(limit)
     )
     events = events_result.scalars().all()
     return [_event_to_sentry(e) for e in events]
@@ -134,22 +165,36 @@ async def get_event(
     return _event_to_sentry(event)
 
 
-def _issue_detail_to_sentry(issue: Issue) -> dict:
-    """Convert Issue to Sentry-compatible detail JSON."""
+def _issue_detail_to_sentry(issue: Issue, project: Project | None = None) -> dict:
+    """Convert Issue to Sentry-compatible detail JSON.
+
+    Fixes for Sentry MCP Zod schema (IssueSchema):
+    - firstSeen/lastSeen: z.string().datetime().nullable() — needs Z suffix
+    - userCount: z.union([z.string(), z.number()]) — required, was missing
+    - permalink: z.string().url() — must be valid URL, not empty string
+    - project: ProjectSchema — requires name field
+    - culprit: z.string().nullable() — must be present
+    """
     return {
         "id": str(issue.id),
-        "shortId": str(issue.id)[:8],
+        "shortId": str(issue.id)[:8].upper(),
         "title": issue.title,
-        "culprit": "",
-        "permalink": "",
+        "culprit": None,
+        "permalink": _build_permalink(issue),
         "level": issue.level.value if issue.level else "error",
         "status": issue.status.value if issue.status else "unresolved",
-        "firstSeen": issue.first_seen.isoformat() if issue.first_seen else "",
-        "lastSeen": issue.last_seen.isoformat() if issue.last_seen else "",
+        "firstSeen": _fmt_dt(issue.first_seen),
+        "lastSeen": _fmt_dt(issue.last_seen),
         "count": str(issue.event_count),
-        "project": {"id": str(issue.project_id), "slug": ""},
-        "metadata": issue.metadata_ or {},
+        "userCount": 0,
         "type": "error",
+        "project": {
+            "id": str(issue.project_id),
+            "slug": project.slug if project else "",
+            "name": project.name if project else "Unknown",
+            "platform": (project.platform or None) if project else None,
+        },
+        "metadata": issue.metadata_ or {},
         "annotations": [],
         "isPublic": False,
         "hasSeen": False,
@@ -159,7 +204,10 @@ def _issue_detail_to_sentry(issue: Issue) -> dict:
 
 
 def _event_to_sentry(event: Event) -> dict:
-    """Convert Event to Sentry-compatible JSON."""
+    """Convert Event to Sentry-compatible JSON.
+
+    Uses Z-suffixed datetimes to pass Sentry MCP's z.string().datetime() validation.
+    """
     data = event.data or {}
     return {
         "id": str(event.id),
@@ -168,8 +216,8 @@ def _event_to_sentry(event: Event) -> dict:
         "groupID": str(event.issue_id),
         "title": data.get("message", ""),
         "message": data.get("message", ""),
-        "dateCreated": event.timestamp.isoformat() if event.timestamp else "",
-        "dateReceived": event.received_at.isoformat() if event.received_at else "",
+        "dateCreated": _fmt_dt(event.timestamp),
+        "dateReceived": _fmt_dt(event.received_at),
         "context": data.get("contexts", {}),
         "entries": _build_entries(data),
         "tags": data.get("tags", []),
