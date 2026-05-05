@@ -90,6 +90,8 @@ export default function ProjectDetailPage({
       : "overview"
   );
   const [statusFilter, setStatusFilter] = useState("unresolved");
+  const [envFilter, setEnvFilter] = useState("");
+  const [environments, setEnvironments] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -177,6 +179,16 @@ export default function ProjectDetailPage({
         } catch {
           // Trend data unavailable — show empty chart
         }
+
+        // Load available environments
+        try {
+          const envs = await api.get<string[]>(
+            `/api/v1/projects/${slug}/environments`
+          );
+          setEnvironments(envs);
+        } catch {
+          // Environments unavailable — hide dropdown
+        }
       } catch {
         router.push("/projects");
       } finally {
@@ -189,13 +201,14 @@ export default function ProjectDetailPage({
   useEffect(() => {
     if (!project) return;
     loadIssues();
-  }, [project, statusFilter]);
+  }, [project, statusFilter, envFilter]);
 
   async function loadIssues() {
     if (!project) return;
     try {
       const params = new URLSearchParams();
       if (statusFilter) params.set("status", statusFilter);
+      if (envFilter) params.set("environment", envFilter);
       params.set("limit", "50");
       const data = await api.get<IssueList>(
         `/api/v1/projects/${slug}/issues?${params.toString()}`
@@ -480,17 +493,44 @@ export default function ProjectDetailPage({
       {activeTab === "issues" && (
         <div>
           {/* Filters */}
-          <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem" }}>
-            {["unresolved", "resolved", "ignored", ""].map((s) => (
-              <button
-                key={s}
-                className={`btn ${statusFilter === s ? "btn-primary" : "btn-ghost"}`}
-                style={{ padding: "0.375rem 0.75rem", fontSize: "0.8125rem" }}
-                onClick={() => setStatusFilter(s)}
-              >
-                {s || "All"}
-              </button>
-            ))}
+          <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              {["unresolved", "resolved", "ignored", ""].map((s) => (
+                <button
+                  key={s}
+                  className={`btn ${statusFilter === s ? "btn-primary" : "btn-ghost"}`}
+                  style={{ padding: "0.375rem 0.75rem", fontSize: "0.8125rem" }}
+                  onClick={() => setStatusFilter(s)}
+                >
+                  {s || "All"}
+                </button>
+              ))}
+            </div>
+            {environments.length > 0 && (
+              <>
+                <div style={{ width: 1, height: 24, background: "var(--border-primary)", margin: "0 0.25rem" }} />
+                <select
+                  id="env-filter"
+                  className="input"
+                  value={envFilter}
+                  onChange={(e) => setEnvFilter(e.target.value)}
+                  style={{
+                    padding: "0.375rem 0.75rem",
+                    fontSize: "0.8125rem",
+                    minWidth: 140,
+                    width: "auto",
+                    background: envFilter ? "rgba(var(--accent-primary-rgb), 0.1)" : undefined,
+                    borderColor: envFilter ? "var(--accent-primary)" : undefined,
+                    color: envFilter ? "var(--accent-primary)" : undefined,
+                  }}
+                >
+                  <option value="">All Environments</option>
+                  {environments.map((env) => (
+                    <option key={env} value={env}>{env}</option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
 
           {issues.length === 0 ? (
@@ -511,6 +551,7 @@ export default function ProjectDetailPage({
                     <th>Issue</th>
                     <th>Level</th>
                     <th>Events</th>
+                    <th>Env</th>
                     <th>Status</th>
                     <th>Last Seen</th>
                     {(currentUser?.role === "admin" || currentUser?.role === "developer") && <th>Actions</th>}
@@ -546,6 +587,15 @@ export default function ProjectDetailPage({
                       </td>
                       <td>
                         <span className="text-mono">{issue.event_count}</span>
+                      </td>
+                      <td>
+                        {issue.metadata_?.environment ? (
+                          <span className="badge badge-info" style={{ fontSize: "0.6875rem" }}>
+                            {issue.metadata_.environment as string}
+                          </span>
+                        ) : (
+                          <span className="text-muted" style={{ fontSize: "0.75rem" }}>—</span>
+                        )}
                       </td>
                       <td>
                         <span className="issue-meta-item">

@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -19,6 +19,35 @@ logger = get_logger("api.issues")
 router = APIRouter()
 
 
+@router.get("/projects/{slug}/environments")
+async def list_project_environments(
+    slug: str,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """List distinct environments seen in issues for a project."""
+    result = await db.execute(
+        select(Project).where(Project.slug == slug)
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not await check_project_access(current_user, project.id, db):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    env_result = await db.execute(
+        select(
+            func.distinct(Issue.metadata_["environment"].astext)
+        ).where(
+            Issue.project_id == project.id,
+            Issue.metadata_["environment"].astext.isnot(None),
+            Issue.metadata_["environment"].astext != "",
+        )
+    )
+    environments = sorted([row[0] for row in env_result.all() if row[0]])
+    return environments
+
+
 @router.get("/projects/{slug}/issues", response_model=IssueListResponse)
 async def list_project_issues(
     slug: str,
@@ -26,6 +55,7 @@ async def list_project_issues(
     db: AsyncSession = Depends(get_db),
     status_filter: IssueStatus | None = Query(None, alias="status"),
     level: IssueLevel | None = None,
+    environment: str | None = Query(None),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
@@ -48,6 +78,10 @@ async def list_project_issues(
     if level is not None:
         query = query.where(Issue.level == level)
         count_query = count_query.where(Issue.level == level)
+    if environment is not None:
+        env_filter = Issue.metadata_["environment"].astext == environment
+        query = query.where(env_filter)
+        count_query = count_query.where(env_filter)
 
     total_result = await db.execute(count_query)
     total = total_result.scalar()
