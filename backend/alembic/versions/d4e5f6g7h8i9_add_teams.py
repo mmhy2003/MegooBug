@@ -87,15 +87,7 @@ def upgrade() -> None:
         FROM teams t, users u
         WHERE t.slug = 'default'
     """)
-    # Make the first admin user (by created_at) the team admin
-    op.execute("""
-        UPDATE team_members
-        SET role = 'admin'::teamrole
-        WHERE user_id = (
-            SELECT id FROM users WHERE role = 'admin'::userrole ORDER BY created_at LIMIT 1
-        )
-        AND team_id = (SELECT id FROM teams WHERE slug = 'default')
-    """)
+    # Note: All users start as 'member' role. Team admin can be set via API.
 
 
 def downgrade() -> None:
