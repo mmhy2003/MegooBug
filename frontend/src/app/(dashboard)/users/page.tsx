@@ -14,6 +14,9 @@ import {
   ChevronDown,
   ChevronUp,
   Shield,
+  Pencil,
+  X,
+  AlertTriangle,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { InviteUserModal } from "@/components/invite-user-modal";
@@ -58,6 +61,11 @@ export default function UsersPage() {
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
   const [showRoles, setShowRoles] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editUserName, setEditUserName] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState<UserItem | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   useEffect(() => {
     loadAll();
@@ -95,6 +103,27 @@ export default function UsersPage() {
       setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
     } catch {}
     setUpdatingId(null);
+  }
+
+  async function saveUserName(userId: string) {
+    if (!editUserName.trim()) return;
+    setSavingName(true);
+    try {
+      const updated = await api.patch<UserItem>(`/api/v1/users/${userId}/name`, { name: editUserName.trim() });
+      setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
+      setEditingUserId(null);
+    } catch {}
+    setSavingName(false);
+  }
+
+  async function deleteUser(userId: string) {
+    setDeletingUserId(userId);
+    try {
+      await api.delete(`/api/v1/users/${userId}`);
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+    } catch {}
+    setDeletingUserId(null);
+    setDeleteConfirmUser(null);
   }
 
   async function resendInvite(invite: InviteItem) {
@@ -301,58 +330,116 @@ export default function UsersPage() {
             </thead>
             <tbody>
               {/* Active / Registered users */}
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                      <div className="user-avatar" style={{ width: 32, height: 32, fontSize: "0.75rem" }}>
-                        {user.name.charAt(0)}
+              {users.map((user) => {
+                const isEditingName = editingUserId === user.id;
+                return (
+                  <tr key={user.id}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                        <div className="user-avatar" style={{ width: 32, height: 32, fontSize: "0.75rem" }}>
+                          {user.name.charAt(0)}
+                        </div>
+                        {isEditingName ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
+                            <input
+                              className="input"
+                              value={editUserName}
+                              onChange={(e) => setEditUserName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") saveUserName(user.id);
+                                if (e.key === "Escape") setEditingUserId(null);
+                              }}
+                              autoFocus
+                              style={{ padding: "0.2rem 0.5rem", fontSize: "0.8125rem", width: 140 }}
+                            />
+                            <button
+                              className="btn btn-primary"
+                              style={{ padding: "0.2rem 0.4rem" }}
+                              onClick={() => saveUserName(user.id)}
+                              disabled={savingName || !editUserName.trim()}
+                            >
+                              {savingName ? <Loader2 size={13} className="spin" /> : <Check size={13} />}
+                            </button>
+                            <button
+                              className="btn btn-ghost"
+                              style={{ padding: "0.2rem 0.4rem" }}
+                              onClick={() => setEditingUserId(null)}
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
+                            <span style={{ fontWeight: 500 }}>{user.name}</span>
+                            <button
+                              className="btn btn-ghost"
+                              style={{ padding: "0.15rem", opacity: 0.5 }}
+                              onClick={() => { setEditingUserId(user.id); setEditUserName(user.name); }}
+                              title="Edit name"
+                            >
+                              <Pencil size={12} />
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <span style={{ fontWeight: 500 }}>{user.name}</span>
-                    </div>
-                  </td>
-                  <td className="text-muted">{user.email}</td>
-                  <td>
-                    <select
-                      className="input"
-                      style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", width: "auto" }}
-                      value={user.role}
-                      onChange={(e) => changeUserRole(user.id, e.target.value)}
-                      disabled={updatingId === user.id}
-                    >
-                      <option value="admin">admin</option>
-                      <option value="developer">developer</option>
-                      <option value="viewer">viewer</option>
-                    </select>
-                  </td>
-                  <td>
-                    <span className={user.is_active ? "badge badge-success" : "badge badge-warning"}>
-                      {user.is_active ? "active" : "disabled"}
-                    </span>
-                  </td>
-                  <td className="text-muted">{formatDate(user.created_at)}</td>
-                  <td>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                      <button
-                        className="btn btn-ghost"
-                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
-                        onClick={() => setManageUser(user)}
-                      >
-                        <FolderKanban size={13} />
-                        Projects
-                      </button>
-                      <button
-                        className="btn btn-ghost"
-                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
-                        onClick={() => toggleUserStatus(user.id)}
+                    </td>
+                    <td className="text-muted">{user.email}</td>
+                    <td>
+                      <select
+                        className="input"
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", width: "auto" }}
+                        value={user.role}
+                        onChange={(e) => changeUserRole(user.id, e.target.value)}
                         disabled={updatingId === user.id}
                       >
-                        {user.is_active ? "Disable" : "Enable"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        <option value="admin">admin</option>
+                        <option value="developer">developer</option>
+                        <option value="viewer">viewer</option>
+                      </select>
+                    </td>
+                    <td>
+                      <span className={user.is_active ? "badge badge-success" : "badge badge-warning"}>
+                        {user.is_active ? "active" : "disabled"}
+                      </span>
+                    </td>
+                    <td className="text-muted">{formatDate(user.created_at)}</td>
+                    <td>
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <button
+                          className="btn btn-ghost"
+                          style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                          onClick={() => setManageUser(user)}
+                        >
+                          <FolderKanban size={13} />
+                          Projects
+                        </button>
+                        <button
+                          className="btn btn-ghost"
+                          style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                          onClick={() => toggleUserStatus(user.id)}
+                          disabled={updatingId === user.id}
+                        >
+                          {user.is_active ? "Disable" : "Enable"}
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-danger-text"
+                          style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                          onClick={() => setDeleteConfirmUser(user)}
+                          disabled={deletingUserId === user.id}
+                          title="Delete user"
+                        >
+                          {deletingUserId === user.id ? (
+                            <Loader2 size={13} className="spin" />
+                          ) : (
+                            <Trash2 size={13} />
+                          )}
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {/* Pending Invites */}
               {pendingInvites.map((invite) => (
@@ -549,6 +636,60 @@ export default function UsersPage() {
           userName={manageUser.name}
           onClose={() => setManageUser(null)}
         />
+      )}
+
+      {/* Delete User Confirmation Modal */}
+      {deleteConfirmUser && (
+        <div className="confirm-overlay" onClick={() => setDeleteConfirmUser(null)}>
+          <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: "50%",
+                background: "rgba(255, 51, 102, 0.1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 1rem",
+              }}
+            >
+              <AlertTriangle size={24} style={{ color: "var(--accent-error)" }} />
+            </div>
+            <h3 style={{ marginBottom: "0.5rem", textAlign: "center" }}>Delete User</h3>
+            <p
+              className="text-muted"
+              style={{ fontSize: "0.875rem", marginBottom: "0.5rem", textAlign: "center" }}
+            >
+              Are you sure you want to delete <strong>{deleteConfirmUser.name}</strong>?
+            </p>
+            <p
+              className="text-muted"
+              style={{ fontSize: "0.8125rem", marginBottom: "1.5rem", textAlign: "center", opacity: 0.8 }}
+            >
+              This will permanently remove the user and revoke all project memberships and team memberships. This action cannot be undone.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setDeleteConfirmUser(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={() => deleteUser(deleteConfirmUser.id)}
+                disabled={deletingUserId === deleteConfirmUser.id}
+              >
+                {deletingUserId === deleteConfirmUser.id ? (
+                  <><Loader2 size={16} className="spin" /> Deleting...</>
+                ) : (
+                  <><Trash2 size={16} /> Delete User</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

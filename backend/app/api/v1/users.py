@@ -206,6 +206,36 @@ async def toggle_user_status(
     return user
 
 
+@router.patch("/{user_id}/name", response_model=UserResponse)
+async def update_user_name(
+    user_id: uuid.UUID,
+    body: dict,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a user's name (admin only)."""
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Name is required",
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    user.name = name
+    await db.flush()
+    await db.refresh(user)
+    return user
+
+
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: uuid.UUID,
