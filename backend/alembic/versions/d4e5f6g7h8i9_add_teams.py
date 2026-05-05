@@ -90,7 +90,7 @@ def upgrade() -> None:
     # Make the first admin user (by created_at) the team admin
     op.execute("""
         UPDATE team_members
-        SET role = 'admin'
+        SET role = 'admin'::teamrole
         WHERE user_id = (
             SELECT id FROM users WHERE role = 'admin'::userrole ORDER BY created_at LIMIT 1
         )
