@@ -56,7 +56,8 @@ class TeamMember(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     role: Mapped[TeamRole] = mapped_column(
-        Enum(TeamRole), nullable=False, default=TeamRole.MEMBER
+        Enum(TeamRole, values_callable=lambda e: [m.value for m in e]),
+        nullable=False, default=TeamRole.MEMBER
     )
     joined_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
