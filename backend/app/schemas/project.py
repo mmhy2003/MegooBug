@@ -14,6 +14,7 @@ class ProjectUpdate(BaseModel):
     """Request to update a project."""
     name: str | None = Field(None, min_length=1, max_length=255)
     platform: str | None = Field(None, max_length=100)
+    team_id: UUID | None = Field(None, description="Assign project to a team (null to unassign)")
 
 
 class ProjectResponse(BaseModel):
@@ -25,6 +26,7 @@ class ProjectResponse(BaseModel):
     platform: str | None = None
     dsn_public_key: str
     created_by: UUID
+    team_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
 

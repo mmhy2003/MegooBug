@@ -67,6 +67,7 @@ async def list_projects(
             "platform": project.platform,
             "dsn_public_key": project.dsn_public_key,
             "created_by": str(project.created_by),
+            "team_id": str(project.team_id) if project.team_id else None,
             "created_at": project.created_at.isoformat() if project.created_at else None,
             "updated_at": project.updated_at.isoformat() if project.updated_at else None,
             "unresolved_count": unresolved_count or 0,
@@ -165,6 +166,8 @@ async def update_project(
         project.name = body.name
     if body.platform is not None:
         project.platform = body.platform
+    if "team_id" in body.model_fields_set:
+        project.team_id = body.team_id
 
     await db.flush()
     await db.refresh(project)

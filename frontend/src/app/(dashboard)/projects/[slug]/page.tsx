@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronRight, Copy, Check, Loader2, Trash2,
-  FolderKanban, AlertTriangle, UserPlus, Users,
+  FolderKanban, AlertTriangle, UserPlus, Users, UsersRound,
 } from "lucide-react";
 import { api, ApiError, API_URL } from "@/lib/api";
 import { useWS } from "@/components/websocket-provider";
@@ -18,6 +18,7 @@ interface Project {
   platform: string | null;
   dsn_public_key: string;
   created_by: string;
+  team_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -103,6 +104,8 @@ export default function ProjectDetailPage({
   const [addingMember, setAddingMember] = useState<string | null>(null);
   const [removingMember, setRemovingMember] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<{ role: string } | null>(null);
+  const [teams, setTeams] = useState<{ id: string; name: string; slug: string }[]>([]);
+  const [editTeamId, setEditTeamId] = useState<string>("");
 
   // Subscribe to project-specific WebSocket channel
   useEffect(() => {
@@ -163,6 +166,7 @@ export default function ProjectDetailPage({
         setProject(proj);
         setEditName(proj.name);
         setEditPlatform(proj.platform || "");
+        setEditTeamId(proj.team_id || "");
 
         // Load current user info for role check
         try {
@@ -255,6 +259,7 @@ export default function ProjectDetailPage({
       const updated = await api.patch<Project>(`/api/v1/projects/${slug}`, {
         name: editName,
         platform: editPlatform || null,
+        team_id: editTeamId || null,
       });
       setProject(updated);
     } catch {}
@@ -289,12 +294,15 @@ export default function ProjectDetailPage({
     } catch {}
   }
 
-  // Load members when settings tab is active
+  // Load members and teams when settings tab is active
   useEffect(() => {
     if (activeTab === "settings" && project) {
       loadMembers();
       if (currentUser?.role === "admin") {
         loadUsers();
+        api.get<{ id: string; name: string; slug: string }[]>("/api/v1/teams")
+          .then(setTeams)
+          .catch(() => {});
       }
     }
   }, [activeTab, project]);
@@ -692,6 +700,28 @@ export default function ProjectDetailPage({
                   <option value="other">Other</option>
                 </select>
               </div>
+              {currentUser?.role === "admin" && (
+                <div className="form-group">
+                  <label htmlFor="edit-team" className="label" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <UsersRound size={14} />
+                    Assigned Team
+                  </label>
+                  <select
+                    id="edit-team"
+                    className="input"
+                    value={editTeamId}
+                    onChange={(e) => setEditTeamId(e.target.value)}
+                  >
+                    <option value="">No team</option>
+                    {teams.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                  <span className="text-muted" style={{ fontSize: "0.7rem", marginTop: "0.25rem", display: "block" }}>
+                    Team members automatically get access and notifications for this project.
+                  </span>
+                </div>
+              )}
             </div>
             <div style={{ marginTop: "1rem" }}>
               <button

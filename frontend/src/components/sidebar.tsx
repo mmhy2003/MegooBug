@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   FolderKanban,
   Users,
+  UsersRound,
   Settings,
   Bug,
   ChevronLeft,
@@ -26,6 +27,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Projects", href: "/projects", icon: FolderKanban },
+  { label: "Teams", href: "/teams", icon: UsersRound },
   { label: "Users", href: "/users", icon: Users, adminOnly: true },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
