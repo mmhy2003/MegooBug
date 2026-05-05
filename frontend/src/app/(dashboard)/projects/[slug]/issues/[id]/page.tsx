@@ -121,7 +121,7 @@ export default function IssueDetailPage({
         setEvents(eventsData.items);
         setUserRole(me.role);
       } catch {
-        router.push(`/projects/${slug}`);
+        router.push(`/projects/${slug}?tab=issues`);
       } finally {
         setLoading(false);
       }
@@ -309,7 +309,7 @@ export default function IssueDetailPage({
       <div className="breadcrumbs">
         <Link href="/projects">Projects</Link>
         <ChevronRight size={14} className="separator" />
-        <Link href={`/projects/${slug}`}>{slug}</Link>
+        <Link href={`/projects/${slug}?tab=issues`}>{slug}</Link>
         <ChevronRight size={14} className="separator" />
         <span style={{ color: "var(--text-primary)" }}>Issue</span>
       </div>

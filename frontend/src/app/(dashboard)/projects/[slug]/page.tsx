@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronRight, Copy, Check, Loader2, Trash2,
   FolderKanban, AlertTriangle, UserPlus, Users,
@@ -76,13 +76,19 @@ export default function ProjectDetailPage({
   const { slug } = use(params);
   const router = useRouter();
   const { lastMessage, subscribe, unsubscribe } = useWS();
+  const searchParams = useSearchParams();
 
   const [project, setProject] = useState<Project | null>(null);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [issueTotal, setIssueTotal] = useState(0);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("overview");
+  const initialTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(
+    initialTab && ["overview", "issues", "settings"].includes(initialTab)
+      ? initialTab
+      : "overview"
+  );
   const [statusFilter, setStatusFilter] = useState("unresolved");
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
