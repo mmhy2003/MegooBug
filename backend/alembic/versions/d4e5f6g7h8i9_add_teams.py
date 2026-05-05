@@ -92,7 +92,7 @@ def upgrade() -> None:
         UPDATE team_members
         SET role = 'admin'
         WHERE user_id = (
-            SELECT id FROM users WHERE role = 'admin' ORDER BY created_at LIMIT 1
+            SELECT id FROM users WHERE role = 'admin'::userrole ORDER BY created_at LIMIT 1
         )
         AND team_id = (SELECT id FROM teams WHERE slug = 'default')
     """)
