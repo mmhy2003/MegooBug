@@ -21,6 +21,9 @@ export const metadata: Metadata = {
     "issue tracker",
   ],
 
+  /* ── PWA Manifest ── */
+  manifest: "/manifest.json",
+
   /* ── Favicon & Icons ── */
   icons: {
     icon: [
@@ -63,6 +66,9 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   other: {
     "og:logo": `${siteUrl}/favicon.png`,
+    "mobile-web-app-capable": "yes",
+    "apple-mobile-web-app-capable": "yes",
+    "apple-mobile-web-app-status-bar-style": "black-translucent",
   },
   robots: {
     index: true,

@@ -30,11 +30,16 @@ router = APIRouter()
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str):
     """Set HTTP-only auth cookies on the response."""
+    # Derive Secure flag from the configured APP_URL scheme — this is more
+    # reliable than checking ENVIRONMENT, which may be "development" even
+    # when the instance is served over HTTPS behind a reverse proxy.
+    is_https = settings.APP_URL.startswith("https://")
+
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=settings.ENVIRONMENT == "production",
+        secure=is_https,
         samesite="lax",
         max_age=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
@@ -43,10 +48,10 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=settings.ENVIRONMENT == "production",
+        secure=is_https,
         samesite="lax",
         max_age=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-        path="/api/v1/auth/refresh",
+        path="/",  # Must be "/" so Android PWA / mobile browsers always send it
     )
 
 
@@ -166,7 +171,7 @@ async def refresh_access_token(
 async def logout(response: Response, current_user: CurrentUser):
     """Clear auth cookies to log out."""
     response.delete_cookie("access_token", path="/")
-    response.delete_cookie("refresh_token", path="/api/v1/auth/refresh")
+    response.delete_cookie("refresh_token", path="/")
     return {"message": "Logged out"}
 
 
