@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 interface Issue {
   id: string;
   project_id: string;
+  issue_number: number | null;
   title: string;
   fingerprint: string;
   status: string;
@@ -311,12 +312,32 @@ export default function IssueDetailPage({
         <ChevronRight size={14} className="separator" />
         <Link href={`/projects/${slug}?tab=issues`}>{slug}</Link>
         <ChevronRight size={14} className="separator" />
-        <span style={{ color: "var(--text-primary)" }}>Issue</span>
+        <span style={{ color: "var(--text-primary)" }}>
+          {issue.issue_number
+            ? `${slug.toUpperCase()}-${issue.issue_number}`
+            : "Issue"}
+        </span>
       </div>
 
       {/* Issue Header */}
       <div className="issue-header">
         <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Short ID */}
+          {issue.issue_number && (
+            <span
+              className="text-mono"
+              style={{
+                fontSize: "0.8125rem",
+                color: "var(--accent-primary)",
+                fontWeight: 600,
+                letterSpacing: "0.025em",
+                marginBottom: "0.25rem",
+                display: "inline-block",
+              }}
+            >
+              {slug.toUpperCase()}-{issue.issue_number}
+            </span>
+          )}
           <h1
             style={{
               fontSize: "1.25rem",
@@ -735,6 +756,14 @@ export default function IssueDetailPage({
           <div className="card">
             <h3 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>Issue Info</h3>
             <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.5rem 1.5rem", fontSize: "0.8125rem" }}>
+              {issue.issue_number && (
+                <>
+                  <span className="text-muted">Short ID</span>
+                  <span className="text-mono" style={{ color: "var(--accent-primary)", fontWeight: 600 }}>
+                    {slug.toUpperCase()}-{issue.issue_number}
+                  </span>
+                </>
+              )}
               <span className="text-muted">ID</span>
               <span className="text-mono">{issue.id}</span>
               <span className="text-muted">Fingerprint</span>

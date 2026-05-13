@@ -10,6 +10,7 @@ class IssueResponse(BaseModel):
     """Issue detail response."""
     id: UUID
     project_id: UUID
+    issue_number: int | None = None
     title: str
     fingerprint: str
     status: IssueStatus

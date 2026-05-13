@@ -26,6 +26,7 @@ interface Project {
 interface Issue {
   id: string;
   project_id: string;
+  issue_number: number | null;
   title: string;
   fingerprint: string;
   status: string;
@@ -131,6 +132,7 @@ export default function ProjectDetailPage({
         const newIssue: Issue = {
           id: iss.id,
           project_id: project.id,
+          issue_number: iss.issue_number || null,
           title: iss.title || "Unknown",
           fingerprint: "",
           status: iss.status || "unresolved",
@@ -574,6 +576,21 @@ export default function ProjectDetailPage({
                           style={{ color: "var(--text-primary)", textDecoration: "none", display: "block" }}
                           title={issue.title}
                         >
+                          {issue.issue_number && (
+                            <span
+                              className="text-mono"
+                              style={{
+                                fontSize: "0.6875rem",
+                                color: "var(--accent-primary)",
+                                fontWeight: 600,
+                                marginBottom: "0.125rem",
+                                display: "block",
+                                letterSpacing: "0.025em",
+                              }}
+                            >
+                              {slug.toUpperCase()}-{issue.issue_number}
+                            </span>
+                          )}
                           <span
                             className="text-mono"
                             style={{
