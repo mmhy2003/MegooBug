@@ -1,7 +1,11 @@
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 
 from app.config import settings
 from app.api.v1 import router as api_v1_router
@@ -15,6 +19,45 @@ from app.services.pubsub import init_redis, close_redis
 # Initialize logging before anything else
 setup_logging()
 logger = get_logger("app")
+
+# ── Regex matching Sentry SDK ingest paths ──
+# These endpoints authenticate via DSN public key (not user JWT/cookies),
+# so they MUST accept requests from any origin — every website that
+# integrates MegooBug will call these from a different domain.
+_INGEST_PATH_RE = re.compile(r"^/api/\d+/(store|envelope)/?$")
+
+
+class SentryIngestCORSMiddleware(BaseHTTPMiddleware):
+    """Permissive CORS for Sentry SDK ingest endpoints.
+
+    The default CORSMiddleware restricts origins to the dashboard URL.
+    Sentry SDKs send error reports from client browsers on *any* domain,
+    so the ingest paths need ``Access-Control-Allow-Origin: *``.
+
+    This middleware runs *before* CORSMiddleware (added later) because
+    Starlette processes middleware in LIFO order — the last middleware
+    added wraps the outermost layer and runs first.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        if _INGEST_PATH_RE.match(request.url.path):
+            # Handle preflight OPTIONS requests immediately
+            if request.method == "OPTIONS":
+                return Response(
+                    status_code=200,
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "POST, OPTIONS",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Max-Age": "86400",
+                    },
+                )
+            # Normal request — forward and add CORS header to response
+            response = await call_next(request)
+            response.headers["Access-Control-Allow-Origin"] = "*"
+            return response
+
+        return await call_next(request)
 
 
 async def _auto_migrate():
@@ -214,7 +257,7 @@ app = FastAPI(
     redirect_slashes=False,  # Sentry CLI expects trailing slashes
 )
 
-# CORS
+# CORS — dashboard API (restricted to configured origins)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -222,6 +265,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Permissive CORS for Sentry SDK ingest endpoints.
+# Added AFTER CORSMiddleware so it runs BEFORE it (Starlette LIFO order).
+app.add_middleware(SentryIngestCORSMiddleware)
 
 # Routers
 app.include_router(api_v1_router)
