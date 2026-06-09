@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
@@ -9,7 +10,6 @@ import {
   Users,
   UsersRound,
   Settings,
-  Bug,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -86,9 +86,13 @@ export function Sidebar({
       <aside className={sidebarClasses} id="main-sidebar">
         {/* Header */}
         <div className="sidebar-header">
-          <div className="sidebar-logo">
-            <Bug size={20} />
-          </div>
+          <Image
+            className="sidebar-logo"
+            src="/logo_new_transparent.png"
+            alt="MegooBug logo"
+            width={36}
+            height={36}
+          />
           <span className="sidebar-brand">MegooBug</span>
         </div>
 

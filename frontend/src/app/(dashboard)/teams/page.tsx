@@ -558,7 +558,7 @@ export default function TeamsPage() {
                 width: 48,
                 height: 48,
                 borderRadius: "var(--radius-full, 50%)",
-                background: "rgba(255, 51, 102, 0.1)",
+                background: "rgba(255, 41, 91, 0.1)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

@@ -3,7 +3,8 @@
 import { useState, FormEvent, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Bug, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
+import Image from "next/image";
 import { api, ApiError } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -50,20 +51,12 @@ function LoginForm() {
             marginBottom: "0.5rem",
           }}
         >
-          <div
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: "var(--radius-md)",
-              background:
-                "linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Bug size={28} color="var(--text-inverse)" />
-          </div>
+          <Image
+            src="/logo_new_transparent.png"
+            alt="MegooBug logo"
+            width={56}
+            height={56}
+          />
         </div>
         <h1>MegooBug</h1>
         <p>Sign in to your bug tracking dashboard</p>

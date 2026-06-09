@@ -3,7 +3,8 @@
 import { useState, useEffect, FormEvent, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Bug, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
+import Image from "next/image";
 import { api, ApiError } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -97,20 +98,12 @@ function RegisterForm() {
         <div className="auth-card">
           <div className="auth-logo">
             <div style={{ display: "inline-flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
-              <div
-                style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: "var(--radius-md)",
-                  background: "linear-gradient(135deg, rgba(255,51,102,0.2), rgba(255,0,255,0.2))",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  border: "1px solid rgba(255,51,102,0.3)",
-                }}
-              >
-                <Bug size={24} style={{ color: "var(--accent-error)" }} />
-              </div>
+              <Image
+                src="/logo_new_transparent.png"
+                alt="MegooBug logo"
+                width={56}
+                height={56}
+              />
             </div>
             <h1 style={{ fontSize: "1.5rem", fontWeight: 700 }}>Invalid Invite</h1>
             <p className="text-muted" style={{ marginTop: "0.5rem" }}>
@@ -140,21 +133,12 @@ function RegisterForm() {
               marginBottom: "0.5rem",
             }}
           >
-            <div
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: "var(--radius-md)",
-                background:
-                  "linear-gradient(135deg, rgba(0,240,255,0.2), rgba(255,0,255,0.2))",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                border: "1px solid rgba(0,240,255,0.3)",
-              }}
-            >
-              <ShieldCheck size={24} style={{ color: "var(--accent-primary)" }} />
-            </div>
+            <Image
+              src="/logo_new_transparent.png"
+              alt="MegooBug logo"
+              width={56}
+              height={56}
+            />
           </div>
           <h1 style={{ fontSize: "1.5rem", fontWeight: 700 }}>
             You&apos;ve Been Invited

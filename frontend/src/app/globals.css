@@ -28,66 +28,68 @@
 /* ── Dark Theme (default) ── */
 [data-theme="dark"],
 :root {
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-card: #1a1a2e;
-  --bg-card-hover: #222238;
-  --bg-input: #16162a;
-  --bg-overlay: rgba(10, 10, 15, 0.85);
+  --bg-primary: #080113;
+  --bg-secondary: #0f071d;
+  --bg-card: #1e162d;
+  --bg-card-hover: #261a3d;
+  --bg-input: #1b112c;
+  --bg-overlay: rgba(8, 1, 19, 0.85);
 
-  --accent-primary: #00f0ff;
-  --accent-primary-rgb: 0, 240, 255;
-  --accent-secondary: #ff00ff;
-  --accent-secondary-rgb: 255, 0, 255;
-  --accent-warning: #ffcc00;
-  --accent-error: #ff3366;
-  --accent-success: #00ff88;
+  --accent-primary: #00ffee;
+  --accent-primary-rgb: 0, 255, 238;
+  --accent-secondary: #ff295b;
+  --accent-secondary-rgb: 255, 41, 91;
+  --accent-warning: #ffd400;
+  --accent-error: #ff295b;
+  --accent-error-rgb: 255, 41, 91;
+  --accent-success: #00e074;
 
-  --text-primary: #e0e0ff;
-  --text-secondary: #8888aa;
-  --text-tertiary: #555570;
-  --text-inverse: #0a0a0f;
+  --text-primary: #e0ebea;
+  --text-secondary: #887c9c;
+  --text-tertiary: #5c5370;
+  --text-inverse: #080113;
 
-  --border-color: #2a2a3e;
-  --border-glow: rgba(0, 240, 255, 0.15);
+  --border-color: #221736;
+  --border-glow: rgba(0, 255, 238, 0.15);
 
-  --glow-primary: 0 0 20px rgba(0, 240, 255, 0.3);
-  --glow-secondary: 0 0 20px rgba(255, 0, 255, 0.3);
-  --glow-error: 0 0 15px rgba(255, 51, 102, 0.3);
-  --glow-success: 0 0 15px rgba(0, 255, 136, 0.3);
-  --glow-subtle: 0 0 10px rgba(0, 240, 255, 0.1);
+  --glow-primary: 0 0 20px rgba(0, 255, 238, 0.3);
+  --glow-secondary: 0 0 20px rgba(255, 41, 91, 0.3);
+  --glow-error: 0 0 15px rgba(255, 41, 91, 0.3);
+  --glow-success: 0 0 15px rgba(0, 224, 116, 0.3);
+  --glow-subtle: 0 0 10px rgba(0, 255, 238, 0.1);
 
   --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
   --shadow-elevated: 0 8px 40px rgba(0, 0, 0, 0.5);
 
-  --glass-bg: rgba(26, 26, 46, 0.6);
-  --glass-border: rgba(0, 240, 255, 0.08);
+  --glass-bg: rgba(30, 22, 45, 0.6);
+  --glass-border: rgba(0, 255, 238, 0.08);
 }
 
 /* ── Light Theme ── */
 [data-theme="light"] {
-  --bg-primary: #f0f0f5;
-  --bg-secondary: #e4e4ed;
+  --bg-primary: #f9f7fc;
+  --bg-secondary: #eee9f7;
   --bg-card: #ffffff;
-  --bg-card-hover: #f5f5fa;
-  --bg-input: #eeeef5;
-  --bg-overlay: rgba(240, 240, 245, 0.9);
+  --bg-card-hover: #ece9f2;
+  --bg-input: #ece9f2;
+  --bg-overlay: rgba(249, 247, 252, 0.9);
 
-  --accent-primary: #0088aa;
-  --accent-primary-rgb: 0, 136, 170;
-  --accent-secondary: #aa0088;
-  --accent-secondary-rgb: 170, 0, 136;
-  --accent-warning: #cc9900;
-  --accent-error: #cc1144;
-  --accent-success: #009955;
+  --accent-primary: #00998f;
+  --accent-primary-rgb: 0, 153, 143;
+  --accent-secondary: #df1648;
+  --accent-secondary-rgb: 223, 22, 72;
+  --accent-warning: #d6a100;
+  --accent-error: #df1648;
+  --accent-error-rgb: 223, 22, 72;
+  --accent-success: #0c8d5e;
 
-  --text-primary: #1a1a2e;
-  --text-secondary: #555577;
-  --text-tertiary: #8888aa;
-  --text-inverse: #f0f0f5;
+  --text-primary: #110623;
+  --text-secondary: #726783;
+  --text-tertiary: #968da5;
+  --text-inverse: #ffffff;
 
-  --border-color: #ccccdd;
-  --border-glow: rgba(0, 136, 170, 0.1);
+  --border-color: #ded7ea;
+  --border-glow: rgba(0, 153, 143, 0.1);
 
   --glow-primary: none;
   --glow-secondary: none;
@@ -99,7 +101,7 @@
   --shadow-elevated: 0 4px 24px rgba(0, 0, 0, 0.12);
 
   --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: rgba(0, 136, 170, 0.1);
+  --glass-border: rgba(0, 153, 143, 0.1);
 }
 
 /* ── Global Reset ── */
@@ -306,15 +308,15 @@ code, pre {
 }
 
 .badge-error {
-  background: rgba(255, 51, 102, 0.15);
+  background: rgba(255, 41, 91, 0.15);
   color: var(--accent-error);
 }
 .badge-warning {
-  background: rgba(255, 204, 0, 0.15);
+  background: rgba(255, 212, 0, 0.15);
   color: var(--accent-warning);
 }
 .badge-success {
-  background: rgba(0, 255, 136, 0.15);
+  background: rgba(0, 224, 116, 0.15);
   color: var(--accent-success);
 }
 .badge-info {
@@ -434,8 +436,8 @@ code, pre {
 
 .auth-error {
   padding: 0.75rem 1rem;
-  background: rgba(255, 51, 102, 0.1);
-  border: 1px solid rgba(255, 51, 102, 0.2);
+  background: rgba(255, 41, 91, 0.1);
+  border: 1px solid rgba(255, 41, 91, 0.2);
   border-radius: var(--radius-sm);
   color: var(--accent-error);
   font-size: 0.8125rem;
@@ -521,8 +523,8 @@ code, pre {
 
 .auth-error {
   padding: 0.75rem 1rem;
-  background: rgba(255, 51, 102, 0.1);
-  border: 1px solid rgba(255, 51, 102, 0.2);
+  background: rgba(255, 41, 91, 0.1);
+  border: 1px solid rgba(255, 41, 91, 0.2);
   border-radius: var(--radius-sm);
   color: var(--accent-error);
   font-size: 0.8125rem;
@@ -561,14 +563,8 @@ code, pre {
   width: 36px;
   height: 36px;
   min-width: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-  border-radius: var(--radius-sm);
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--text-inverse);
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .sidebar-brand {
@@ -1196,8 +1192,8 @@ tr:hover td {
 
 .copy-btn.copied {
   color: var(--accent-success);
-  background: rgba(0, 255, 136, 0.1);
-  border-color: rgba(0, 255, 136, 0.2);
+  background: rgba(0, 224, 116, 0.1);
+  border-color: rgba(0, 224, 116, 0.2);
 }
 
 /* ── Stack Trace ── */
@@ -1263,8 +1259,8 @@ tr:hover td {
 
 /* ── Token Warning ── */
 .token-warning {
-  background: rgba(255, 204, 0, 0.08);
-  border: 1px solid rgba(255, 204, 0, 0.2);
+  background: rgba(255, 212, 0, 0.08);
+  border: 1px solid rgba(255, 212, 0, 0.2);
   border-radius: var(--radius-sm);
   padding: 1rem;
   margin-top: 1rem;
@@ -1460,9 +1456,9 @@ tr:hover td {
 
 /* ── Badge success ── */
 .badge-success {
-  background: rgba(0, 255, 136, 0.1);
+  background: rgba(0, 224, 116, 0.1);
   color: var(--accent-success);
-  border: 1px solid rgba(0, 255, 136, 0.2);
+  border: 1px solid rgba(0, 224, 116, 0.2);
 }
 
 /* ── Member Management ── */
@@ -1494,7 +1490,7 @@ tr:hover td {
 }
 
 .btn-danger-text:hover {
-  background: rgba(255, 51, 102, 0.1) !important;
+  background: rgba(255, 41, 91, 0.1) !important;
 }
 
 .manage-projects-modal {
@@ -1518,9 +1514,9 @@ tr:hover td {
 }
 
 .badge-expired {
-  background: rgba(255, 51, 102, 0.08);
+  background: rgba(255, 41, 91, 0.08);
   color: var(--accent-error);
-  border: 1px solid rgba(255, 51, 102, 0.15);
+  border: 1px solid rgba(255, 41, 91, 0.15);
 }
 
 /* ── Responsive: Tablet ── */

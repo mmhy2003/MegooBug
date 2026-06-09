@@ -3,7 +3,8 @@
 import { useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bug, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
+import Image from "next/image";
 import { api, ApiError } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -50,20 +51,12 @@ export default function SignupPage() {
               marginBottom: "0.5rem",
             }}
           >
-            <div
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: "var(--radius-md)",
-                background:
-                  "linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Bug size={28} color="var(--text-inverse)" />
-            </div>
+            <Image
+              src="/logo_new_transparent.png"
+              alt="MegooBug logo"
+              width={56}
+              height={56}
+            />
           </div>
           <h1>MegooBug</h1>
           <p>Create your account</p>

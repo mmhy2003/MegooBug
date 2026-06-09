@@ -844,7 +844,7 @@ export default function ProjectDetailPage({
           {currentUser?.role === "admin" && (
             <div
               className="card"
-              style={{ borderColor: "rgba(255, 51, 102, 0.3)" }}
+              style={{ borderColor: "rgba(255, 41, 91, 0.3)" }}
             >
               <h3 style={{ fontSize: "1rem", marginBottom: "0.5rem", color: "var(--accent-error)" }}>
                 Danger Zone

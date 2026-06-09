@@ -500,7 +500,7 @@ export default function IssueDetailPage({
                               </div>
                             ))}
                             {frame.context_line && (
-                              <div style={{ padding: "0 1rem", background: "rgba(255,51,102,0.08)", color: "var(--text-primary)", fontWeight: 600, whiteSpace: "pre", borderLeft: "3px solid var(--status-error)" }}>
+                              <div style={{ padding: "0 1rem", background: "rgba(255,41,91,0.08)", color: "var(--text-primary)", fontWeight: 600, whiteSpace: "pre", borderLeft: "3px solid var(--status-error)" }}>
                                 <span style={{ display: "inline-block", width: 48, textAlign: "right", marginRight: 16, opacity: 0.7, userSelect: "none" }}>{frame.lineno}</span>
                                 {frame.context_line}
                               </div>

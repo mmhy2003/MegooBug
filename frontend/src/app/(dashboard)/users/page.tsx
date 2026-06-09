@@ -552,9 +552,9 @@ export default function UsersPage() {
                           width: 32,
                           height: 32,
                           fontSize: "0.75rem",
-                          background: "rgba(var(--accent-error-rgb, 255,51,102), 0.1)",
+                          background: "rgba(var(--accent-error-rgb, 255,41,91), 0.1)",
                           color: "var(--accent-error)",
-                          border: "1px dashed rgba(var(--accent-error-rgb, 255,51,102), 0.3)",
+                          border: "1px dashed rgba(var(--accent-error-rgb, 255,41,91), 0.3)",
                         }}
                       >
                         <Mail size={14} />
@@ -647,7 +647,7 @@ export default function UsersPage() {
                 width: 48,
                 height: 48,
                 borderRadius: "50%",
-                background: "rgba(255, 51, 102, 0.1)",
+                background: "rgba(255, 41, 91, 0.1)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

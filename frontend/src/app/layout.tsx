@@ -27,10 +27,12 @@ export const metadata: Metadata = {
   /* ── Favicon & Icons ── */
   icons: {
     icon: [
-      { url: "/favicon.png", type: "image/png" },
+      { url: "/favicon.png", type: "image/png", sizes: "64x64" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
     ],
     apple: [
-      { url: "/apple-touch-icon.png", type: "image/png" },
+      { url: "/apple-touch-icon.png", type: "image/png", sizes: "180x180" },
     ],
   },
 
@@ -65,7 +67,7 @@ export const metadata: Metadata = {
   /* ── Additional Meta ── */
   metadataBase: new URL(siteUrl),
   other: {
-    "og:logo": `${siteUrl}/favicon.png`,
+    "og:logo": `${siteUrl}/icon-512.png`,
     "mobile-web-app-capable": "yes",
     "apple-mobile-web-app-capable": "yes",
     "apple-mobile-web-app-status-bar-style": "black-translucent",
