@@ -33,7 +33,14 @@ celery_app.conf.include = [
     "app.tasks.event_tasks",
     "app.tasks.cleanup_tasks",
     "app.tasks.email_tasks",
+    "app.tasks.ingest_tasks",
 ]
+
+# Route event ingestion to its own queue so storms can't starve emails,
+# indexing, or cleanup (and vice versa) — drained by the celery-ingest service.
+celery_app.conf.task_routes = {
+    "ingest_event": {"queue": "ingest"},
+}
 
 # Periodic tasks (beat runs embedded in the worker via `-B`)
 celery_app.conf.beat_schedule = {
