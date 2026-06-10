@@ -125,17 +125,28 @@ async def lifespan(app: FastAPI):
     logger.info("%s starting up (env=%s, signup=%s)",
                 settings.APP_NAME, settings.ENVIRONMENT, settings.ALLOW_SIGNUP)
 
-    try:
-        await _auto_migrate()
-    except Exception:
-        logger.exception("Failed to run database migrations — aborting startup")
-        raise
+    # Serialize migrate+seed across uvicorn workers: with --workers N, every
+    # process runs this lifespan concurrently, and on a fresh database two
+    # workers would race CREATE TABLE / admin seed. The advisory lock makes
+    # them take turns; later workers find the work already done.
+    from sqlalchemy import text
 
-    try:
-        await _auto_seed()
-    except Exception:
-        logger.exception("Failed to seed admin user — aborting startup")
-        raise
+    async with engine.connect() as lock_conn:
+        await lock_conn.execute(text("SELECT pg_advisory_lock(727274)"))
+        try:
+            try:
+                await _auto_migrate()
+            except Exception:
+                logger.exception("Failed to run database migrations — aborting startup")
+                raise
+
+            try:
+                await _auto_seed()
+            except Exception:
+                logger.exception("Failed to seed admin user — aborting startup")
+                raise
+        finally:
+            await lock_conn.execute(text("SELECT pg_advisory_unlock(727274)"))
 
     try:
         await init_redis()

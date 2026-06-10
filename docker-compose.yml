@@ -50,6 +50,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    # Multi-process serving; Dockerfile CMD remains the single-process fallback
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2}
     env_file: .env
     depends_on:
       postgres:
@@ -77,6 +79,21 @@ services:
       redis:
         condition: service_healthy
       meilisearch:
+        condition: service_healthy
+    networks:
+      - megoobug
+
+  celery-ingest:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: celery -A app.worker worker -Q ingest --concurrency=4 --loglevel=info
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - megoobug

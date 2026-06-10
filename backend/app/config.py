@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     # Days to keep ingested events/issues. 0 or negative disables cleanup.
     RETENTION_DAYS: int = 14
 
+    # ── Ingestion ──
+    # Reject decompressed event payloads larger than this (bytes).
+    MAX_EVENT_BYTES: int = 1_048_576
+    # Return 429 when the Redis ingest queue is deeper than this.
+    INGEST_QUEUE_MAX: int = 50_000
+
     # ── Seed Admin ──
     ADMIN_EMAIL: str = "admin@megoobug.local"
     ADMIN_PASSWORD: str = "admin123456"

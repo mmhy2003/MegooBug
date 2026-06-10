@@ -6,13 +6,17 @@ event fingerprinting, deduplication, and issue grouping.
 import hashlib
 import json
 import re
+import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import parse_qs
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
+from app.database import async_session_factory
 from app.models.project import Project, ProjectMember
 from app.models.issue import Issue, IssueStatus, IssueLevel
 from app.models.event import Event
@@ -39,60 +43,137 @@ except Exception:
 _SENTRY_AUTH_RE = re.compile(r"sentry_key=([a-f0-9]+)")
 
 
-async def validate_dsn(
+def _extract_dsn_key(
     auth_header: str | None,
     query_params: dict,
-    db: AsyncSession,
     envelope_header: dict | None = None,
-) -> Project | None:
-    """Validate DSN auth from X-Sentry-Auth header, query params, or envelope header.
-
-    Returns the Project if valid, None otherwise.
-    """
-    dsn_key = None
-
-    # Try X-Sentry-Auth header
+) -> str | None:
+    """Extract the DSN public key from header, query param, or envelope DSN."""
     if auth_header:
         match = _SENTRY_AUTH_RE.search(auth_header)
         if match:
-            dsn_key = match.group(1)
+            return match.group(1)
 
-    # Fallback: query param ?sentry_key=...
-    if dsn_key is None:
-        dsn_key = query_params.get("sentry_key")
+    key = query_params.get("sentry_key")
+    if key:
+        return key
 
-    # Fallback: DSN in envelope header
-    if dsn_key is None and envelope_header:
+    if envelope_header:
         dsn_str = envelope_header.get("dsn", "")
         if dsn_str:
-            # DSN format: {PROTOCOL}://{PUBLIC_KEY}:{SECRET_KEY}@{HOST}/{PROJECT_ID}
-            # Extract public key (the user part of the URL)
             try:
                 from urllib.parse import urlparse
                 parsed = urlparse(dsn_str)
                 if parsed.username:
-                    dsn_key = parsed.username
+                    return parsed.username
             except Exception:
                 pass
 
+    return None
+
+
+@dataclass(frozen=True)
+class ProjectSnapshot:
+    """Minimal project identity for the ingest hot path."""
+    id: str
+    name: str
+    slug: str
+
+
+_DSN_CACHE: dict[str, tuple[ProjectSnapshot | None, float]] = {}
+_DSN_CACHE_TTL = 60.0       # seconds, valid keys
+_DSN_NEGATIVE_TTL = 10.0    # seconds, unknown keys (don't hammer the DB on floods)
+_DSN_CACHE_MAX = 10_000  # hard bound — DSN keys are attacker-controlled
+_DSN_KEY_MAX_LEN = 64    # real keys are 32 hex chars; longer is garbage
+
+
+def clear_dsn_cache() -> None:
+    """Test hook."""
+    _DSN_CACHE.clear()
+
+
+async def _fetch_project_snapshot(dsn_key: str) -> ProjectSnapshot | None:
+    """DB lookup for a DSN key — only called on cache miss."""
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(Project).where(Project.dsn_public_key == dsn_key)
+        )
+        project = result.scalar_one_or_none()
+    if project is None:
+        logger.warning("Invalid DSN key: %s", dsn_key[:8])
+        return None
+    return ProjectSnapshot(id=str(project.id), name=project.name, slug=project.slug)
+
+
+async def resolve_dsn(
+    auth_header: str | None,
+    query_params: dict,
+    envelope_header: dict | None = None,
+) -> ProjectSnapshot | None:
+    """Resolve DSN auth to a project snapshot, with in-process TTL caching."""
+    dsn_key = _extract_dsn_key(auth_header, query_params, envelope_header)
     if dsn_key is None:
         logger.warning("No DSN key found in request")
         return None
 
-    result = await db.execute(
-        select(Project).where(Project.dsn_public_key == dsn_key)
-    )
-    project = result.scalar_one_or_none()
-    if project is None:
-        logger.warning("Invalid DSN key: %s", dsn_key[:8])
+    if len(dsn_key) > _DSN_KEY_MAX_LEN:
+        logger.warning("DSN key rejected (length %d)", len(dsn_key))
+        return None
 
-    return project
+    now = time.monotonic()
+    cached = _DSN_CACHE.get(dsn_key)
+    if cached is not None and now < cached[1]:
+        return cached[0]
+
+    snapshot = await _fetch_project_snapshot(dsn_key)
+    ttl = _DSN_CACHE_TTL if snapshot is not None else _DSN_NEGATIVE_TTL
+    if len(_DSN_CACHE) >= _DSN_CACHE_MAX:
+        # Unique-key floods must not grow memory unboundedly; dropping the
+        # whole cache is fine — entries rebuild on the next request.
+        _DSN_CACHE.clear()
+    _DSN_CACHE[dsn_key] = (snapshot, now + ttl)
+    return snapshot
+
+
+_DEPTH_CACHE = {"full": False, "expires": 0.0}
+
+
+def clear_depth_cache() -> None:
+    """Test hook."""
+    _DEPTH_CACHE.update(full=False, expires=0.0)
+
+
+async def _queue_depth(queue: str) -> int:
+    from app.services.pubsub import queue_depth
+    return await queue_depth(queue)
+
+
+async def ingest_queue_full() -> bool:
+    """True when the ingest queue exceeds INGEST_QUEUE_MAX.
+
+    Result cached ~1s; fails OPEN (a broken depth check must not block
+    ingestion — the bounded publish timeout is the harder backstop).
+    """
+    now = time.monotonic()
+    if now < _DEPTH_CACHE["expires"]:
+        return _DEPTH_CACHE["full"]
+    try:
+        full = await _queue_depth("ingest") > settings.INGEST_QUEUE_MAX
+    except Exception as e:
+        logger.warning("Ingest queue depth check failed (failing open): %s", e)
+        full = False
+    _DEPTH_CACHE.update(full=full, expires=now + 1.0)
+    return full
+
 
 
 def parse_store_payload(body: bytes) -> dict:
     """Parse a legacy Sentry store JSON payload."""
     try:
-        return json.loads(body)
+        data = json.loads(body)
+        if not isinstance(data, dict):
+            return {}
+        return data
     except (json.JSONDecodeError, ValueError) as e:
         logger.error("Failed to parse store payload: %s", e)
         return {}
@@ -195,7 +276,8 @@ def parse_envelope_payload(body: bytes) -> list[dict]:
             if item_type in ("event", "error", "transaction", "default", ""):
                 try:
                     payload = json.loads(payload_bytes)
-                    events.append(payload)
+                    if isinstance(payload, dict):
+                        events.append(payload)
                 except (json.JSONDecodeError, ValueError) as e:
                     logger.debug(
                         "Failed to parse %s payload (%d bytes): %s",
