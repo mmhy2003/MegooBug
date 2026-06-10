@@ -74,7 +74,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile.dev
     # -B embeds the beat scheduler — move beat to its own service if workers scale beyond one
-    command: celery -A app.worker worker -B --loglevel=info
+    command: celery -A app.worker worker -B -s /tmp/celerybeat-schedule --loglevel=info
     env_file: .env
     volumes:
       - ./backend:/app
