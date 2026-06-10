@@ -8,14 +8,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.config import settings as app_settings
-from app.models.setting import Setting
-from app.logging import get_logger
-
-logger = get_logger("email")
 
 # MegooBug logo as inline SVG data URI (matches CyberPunk theme)
 # A stylized neon cyan bug icon with antennae, eyes, legs, and glow on dark background
@@ -67,30 +60,22 @@ LOGO_DATA_URI = (
 )
 
 
-async def _get_smtp_config(db: AsyncSession) -> dict | None:
-    """Load SMTP config from DB settings, falling back to env vars."""
-    result = await db.execute(select(Setting).where(Setting.key == "smtp"))
-    setting = result.scalar_one_or_none()
-
-    if setting and setting.value.get("host"):
-        return setting.value
-
-    # Fallback to env vars
-    if app_settings.SMTP_HOST:
-        return {
-            "host": app_settings.SMTP_HOST,
-            "port": app_settings.SMTP_PORT,
-            "username": app_settings.SMTP_USERNAME,
-            "password": app_settings.SMTP_PASSWORD,
-            "from_email": app_settings.SMTP_FROM_EMAIL or "noreply@megoobug.local",
-            "use_tls": app_settings.SMTP_USE_TLS,
-        }
-
-    return None
+def _env_smtp_config() -> dict | None:
+    """SMTP config from environment variables, or None if not configured."""
+    if not app_settings.SMTP_HOST:
+        return None
+    return {
+        "host": app_settings.SMTP_HOST,
+        "port": app_settings.SMTP_PORT,
+        "username": app_settings.SMTP_USERNAME,
+        "password": app_settings.SMTP_PASSWORD,
+        "from_email": app_settings.SMTP_FROM_EMAIL or "noreply@megoobug.local",
+        "use_tls": app_settings.SMTP_USE_TLS,
+    }
 
 
 def _send(cfg: dict, to: str, subject: str, html_body: str, text_body: str):
-    """Synchronous SMTP send (called from async context via thread)."""
+    """Synchronous SMTP send (called from Celery worker tasks)."""
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = cfg.get("from_email", "noreply@megoobug.local")
@@ -288,55 +273,6 @@ def _build_invite_html(
     </table>
 </body>
 </html>"""
-
-
-async def send_invite_email(
-    db: AsyncSession,
-    to_email: str,
-    invite_token: str,
-    role: str,
-    invited_by_name: str,
-):
-    """Send an invite email with a registration link."""
-    cfg = await _get_smtp_config(db)
-    if cfg is None:
-        logger.warning("Cannot send invite email to %s — SMTP not configured", to_email)
-        return False
-
-    app_url = app_settings.APP_URL.rstrip("/")
-    invite_link = f"{app_url}/register?token={invite_token}"
-    app_name = app_settings.APP_NAME
-    expire_hours = app_settings.INVITE_TOKEN_EXPIRE_HOURS
-
-    subject = f"You've been invited to {app_name}"
-
-    text_body = (
-        f"Hi,\n\n"
-        f"{invited_by_name} has invited you to join {app_name} as a {role}.\n\n"
-        f"Click the link below to create your account:\n"
-        f"{invite_link}\n\n"
-        f"This link expires in {expire_hours} hours.\n\n"
-        f"If you didn't expect this invite, you can safely ignore this email.\n\n"
-        f"— {app_name}"
-    )
-
-    html_body = _build_invite_html(
-        app_name=app_name,
-        invite_link=invite_link,
-        invited_by_name=invited_by_name,
-        role=role,
-        expire_hours=expire_hours,
-    )
-
-    try:
-        import asyncio
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _send, cfg, to_email, subject, html_body, text_body)
-        logger.info("Invite email sent to %s", to_email)
-        return True
-    except Exception as e:
-        logger.error("Failed to send invite email to %s: %s", to_email, e)
-        return False
 
 
 # ── Issue Notification Email ──
@@ -555,61 +491,3 @@ def _build_issue_notification_html(
     </table>
 </body>
 </html>"""
-
-
-async def send_issue_notification_email(
-    db: AsyncSession,
-    to_email: str,
-    project_name: str,
-    project_slug: str,
-    issue_id: str,
-    issue_title: str,
-    issue_level: str,
-    is_regression: bool = False,
-    event_count: int = 1,
-    environment: str = "",
-):
-    """Send an issue notification email to a project member."""
-    cfg = await _get_smtp_config(db)
-    if cfg is None:
-        logger.debug("Cannot send issue email — SMTP not configured")
-        return False
-
-    app_url = app_settings.APP_URL.rstrip("/")
-    app_name = app_settings.APP_NAME
-    issue_link = f"{app_url}/projects/{project_slug}/issues/{issue_id}"
-    type_label = "Regression" if is_regression else "New Issue"
-
-    subject = f"[{project_name}] {type_label}: {issue_title[:100]}"
-
-    text_body = (
-        f"{type_label} in {project_name}\n\n"
-        f"Level: {issue_level.upper()}\n"
-        f"Title: {issue_title}\n"
-        f"Events: {event_count}\n"
-        + (f"Environment: {environment}\n" if environment else "")
-        + f"\nView issue: {issue_link}\n\n"
-        f"— {app_name}"
-    )
-
-    html_body = _build_issue_notification_html(
-        app_name=app_name,
-        project_name=project_name,
-        issue_title=issue_title,
-        issue_level=issue_level,
-        issue_link=issue_link,
-        is_regression=is_regression,
-        event_count=event_count,
-        environment=environment,
-    )
-
-    try:
-        import asyncio
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _send, cfg, to_email, subject, html_body, text_body)
-        logger.info("Issue notification email sent to %s (issue=%s)", to_email, issue_id[:8])
-        return True
-    except Exception as e:
-        logger.error("Failed to send issue notification email to %s: %s", to_email, e)
-        return False
-

@@ -21,6 +21,7 @@ from app.logging import get_logger
 
 try:
     from app.tasks.event_tasks import index_issue_to_meilisearch, index_event_to_meilisearch
+    from app.tasks.email_tasks import send_issue_emails
     _HAS_TASKS = True
 except Exception:
     _HAS_TASKS = False
@@ -622,41 +623,35 @@ async def _create_notifications(
                 except Exception:
                     pass
 
-        # ── Email notifications (fire-and-forget) ──
-        if email_user_ids:
+        # ── Email notifications (queued on the Celery worker) ──
+        # Never send SMTP inline here: this runs inside the ingest request
+        # while its pooled DB connection is held — inline sends caused the
+        # 2026-06 pool-exhaustion incident.
+        if email_user_ids and _HAS_TASKS:
             try:
-                from app.services.email import send_issue_notification_email
-
-                # Extract environment from issue metadata
                 environment = ""
                 if issue.metadata_ and isinstance(issue.metadata_, dict):
                     environment = issue.metadata_.get("environment", "")
 
-                is_regression = notification_type == NotificationType.REGRESSION
-
-                for user_id in email_user_ids:
-                    email_addr = user_rows.get(user_id, {}).get("email")
-                    if not email_addr:
-                        continue
-                    try:
-                        await send_issue_notification_email(
-                            db=db,
-                            to_email=email_addr,
-                            project_name=project.name,
-                            project_slug=project.slug,
-                            issue_id=str(issue.id),
-                            issue_title=issue.title,
-                            issue_level=issue.level.value,
-                            is_regression=is_regression,
-                            event_count=issue.event_count,
-                            environment=environment,
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            "Failed to send issue email to %s: %s", email_addr, e
-                        )
+                emails = [
+                    user_rows[uid]["email"]
+                    for uid in email_user_ids
+                    if user_rows.get(uid, {}).get("email")
+                ]
+                if emails:
+                    send_issue_emails.delay({
+                        "emails": emails,
+                        "project_name": project.name,
+                        "project_slug": project.slug,
+                        "issue_id": str(issue.id),
+                        "issue_title": issue.title,
+                        "issue_level": issue.level.value,
+                        "is_regression": notification_type == NotificationType.REGRESSION,
+                        "event_count": issue.event_count,
+                        "environment": environment,
+                    })
             except Exception as e:
-                logger.warning("Failed to dispatch issue emails: %s", e)
+                logger.warning("Failed to queue issue emails: %s", e)
 
         logger.debug(
             "Created %d in-app + %d email notifications for %s (project=%s, issue=%s)",

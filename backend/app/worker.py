@@ -16,12 +16,23 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_default_queue="default",
+    # Bound .delay() against an unreachable broker: API handlers publish
+    # tasks inline (guarded by try/except), and an unbounded connect would
+    # stall the event loop for minutes on a blackholed broker.
+    broker_transport_options={"socket_connect_timeout": 2, "socket_timeout": 5},
+    task_publish_retry_policy={
+        "max_retries": 1,
+        "interval_start": 0,
+        "interval_step": 0.2,
+        "interval_max": 0.2,
+    },
 )
 
 # Register task modules explicitly
 celery_app.conf.include = [
     "app.tasks.event_tasks",
     "app.tasks.cleanup_tasks",
+    "app.tasks.email_tasks",
 ]
 
 # Periodic tasks (beat runs embedded in the worker via `-B`)
