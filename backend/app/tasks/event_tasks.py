@@ -74,8 +74,10 @@ def index_event_to_meilisearch(event_data: dict):
 def reindex_all():
     """Full rebuild of the issues, events, and projects search indexes.
 
-    Called via `make reindex`. Uses synchronous DB access since Celery
-    tasks run outside the async event loop.
+    Clears each index, then re-adds everything from Postgres. Invoked via
+    `make reindex` (python -m app.scripts.reindex) or as a Celery task.
+    Uses synchronous DB access since Celery tasks run outside the async
+    event loop.
     """
     try:
         import meilisearch
@@ -137,7 +139,7 @@ def reindex_all():
                 logger.info("Re-indexed %d projects", len(projects))
 
             # Re-index events (batched — events is the largest table)
-            result = conn.execute(text(
+            result = conn.execution_options(stream_results=True).execute(text(
                 "SELECT id, event_id, issue_id, project_id, data, timestamp FROM events"
             ))
             batch = []
