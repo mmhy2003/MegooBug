@@ -1,5 +1,4 @@
 """Tests for the async ingestion pipeline: DSN cache, backpressure, endpoints, worker."""
-import time
 import uuid
 
 import pytest
@@ -81,3 +80,30 @@ async def test_ingest_queue_full_above_cap(monkeypatch):
     monkeypatch.setattr(ingest_service, "_queue_depth", _deep)
     ingest_service.clear_depth_cache()
     assert await ingest_service.ingest_queue_full() is True
+
+
+async def test_resolve_dsn_rejects_oversized_keys(monkeypatch):
+    from app.services import ingest as ingest_service
+
+    async def _fake_fetch(dsn_key):
+        raise AssertionError("oversized key must not reach the DB")
+
+    monkeypatch.setattr(ingest_service, "_fetch_project_snapshot", _fake_fetch)
+    huge_key = "a" * 500
+    assert await ingest_service.resolve_dsn("", {"sentry_key": huge_key}) is None
+    assert huge_key not in ingest_service._DSN_CACHE
+
+
+async def test_dsn_cache_is_bounded(monkeypatch):
+    from app.services import ingest as ingest_service
+
+    async def _fake_fetch(dsn_key):
+        return None
+
+    monkeypatch.setattr(ingest_service, "_fetch_project_snapshot", _fake_fetch)
+    monkeypatch.setattr(ingest_service, "_DSN_CACHE_MAX", 5)
+
+    for i in range(7):
+        await ingest_service.resolve_dsn("", {"sentry_key": f"flood{i}"})
+
+    assert len(ingest_service._DSN_CACHE) <= 5

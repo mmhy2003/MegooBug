@@ -83,6 +83,8 @@ class ProjectSnapshot:
 _DSN_CACHE: dict[str, tuple[ProjectSnapshot | None, float]] = {}
 _DSN_CACHE_TTL = 60.0       # seconds, valid keys
 _DSN_NEGATIVE_TTL = 10.0    # seconds, unknown keys (don't hammer the DB on floods)
+_DSN_CACHE_MAX = 10_000  # hard bound — DSN keys are attacker-controlled
+_DSN_KEY_MAX_LEN = 64    # real keys are 32 hex chars; longer is garbage
 
 
 def clear_dsn_cache() -> None:
@@ -114,6 +116,10 @@ async def resolve_dsn(
         logger.warning("No DSN key found in request")
         return None
 
+    if len(dsn_key) > _DSN_KEY_MAX_LEN:
+        logger.warning("DSN key rejected (length %d)", len(dsn_key))
+        return None
+
     now = time.monotonic()
     cached = _DSN_CACHE.get(dsn_key)
     if cached is not None and now < cached[1]:
@@ -121,6 +127,10 @@ async def resolve_dsn(
 
     snapshot = await _fetch_project_snapshot(dsn_key)
     ttl = _DSN_CACHE_TTL if snapshot is not None else _DSN_NEGATIVE_TTL
+    if len(_DSN_CACHE) >= _DSN_CACHE_MAX:
+        # Unique-key floods must not grow memory unboundedly; dropping the
+        # whole cache is fine — entries rebuild on the next request.
+        _DSN_CACHE.clear()
     _DSN_CACHE[dsn_key] = (snapshot, now + ttl)
     return snapshot
 
