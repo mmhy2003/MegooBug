@@ -86,6 +86,22 @@ services:
     networks:
       - megoobug
 
+  celery-ingest:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    command: celery -A app.worker worker -Q ingest --concurrency=4 --loglevel=info
+    env_file: .env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - megoobug
+
   frontend:
     build:
       context: ./frontend
