@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.sentry_compat.event_lookup import find_event
 from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, check_project_access, check_project_developer_access
@@ -149,15 +150,12 @@ async def get_latest_event(
 
 @router.get("/events/{event_id}/")
 async def get_event(
-    event_id: UUID,
+    event_id: str,
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a single event by its internal ID."""
-    result = await db.execute(
-        select(Event).where(Event.id == event_id)
-    )
-    event = result.scalar_one_or_none()
+    """Get a single event by its Sentry eventID or internal ID."""
+    event = await find_event(db, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
     if not await check_project_access(current_user, event.project_id, db):
