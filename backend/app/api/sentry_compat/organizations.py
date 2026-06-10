@@ -16,6 +16,7 @@ from app.models.project import Project
 from app.models.issue import Issue, IssueStatus
 from app.models.event import Event
 from app.models.user import User
+from app.api.sentry_compat.event_lookup import find_event
 from app.logging import get_logger
 
 logger = get_logger("api.sentry_compat.organizations")
@@ -601,20 +602,10 @@ async def get_org_issue_event(
             .order_by(Event.timestamp.desc())
             .limit(1)
         )
+        event = result.scalar_one_or_none()
     else:
-        try:
-            eid = UUID(event_id)
-            result = await db.execute(
-                select(Event).where(Event.id == eid, Event.issue_id == issue.id)
-            )
-        except ValueError:
-            result = await db.execute(
-                select(Event).where(
-                    Event.event_id == event_id, Event.issue_id == issue.id
-                )
-            )
+        event = await find_event(db, event_id, issue_id=issue.id)
 
-    event = result.scalar_one_or_none()
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
     return _event_to_sentry(event)
