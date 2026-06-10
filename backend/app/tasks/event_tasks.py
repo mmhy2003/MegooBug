@@ -151,7 +151,7 @@ def reindex_all():
                     "issue_id": str(row[2]),
                     "project_id": str(row[3]),
                     "message": _extract_searchable_text(row[4] or {}),
-                    "timestamp": str(row[5]) if row[5] else "",
+                    "timestamp": row[5].isoformat() if row[5] else "",
                 })
                 if len(batch) >= 1000:
                     client.index("events").add_documents(batch, primary_key="id")
