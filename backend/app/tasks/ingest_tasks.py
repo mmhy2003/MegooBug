@@ -26,19 +26,24 @@ logger = get_logger("tasks.ingest")
 
 _loop: asyncio.AbstractEventLoop | None = None
 _session_factory = None
+_engine = None
 
 
 def _get_loop_and_factory():
     """Lazily create the per-process loop, engine, and pubsub pool."""
-    global _loop, _session_factory
+    global _loop, _session_factory, _engine
     if _loop is None:
         _loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(_loop)
-        engine = create_async_engine(
+        # Do NOT call asyncio.set_event_loop — that would poison the process-wide
+        # "current" loop and cause RuntimeError: Event loop is closed in any later
+        # async code that calls asyncio.get_event_loop() (e.g. other test files).
+        # asyncpg / SQLAlchemy-asyncio / redis-py all use get_running_loop() so
+        # they do not need the loop to be "current".
+        _engine = create_async_engine(
             settings.DATABASE_URL, pool_size=5, max_overflow=2, pool_pre_ping=True
         )
         _session_factory = async_sessionmaker(
-            engine, class_=AsyncSession, expire_on_commit=False
+            _engine, class_=AsyncSession, expire_on_commit=False
         )
         # process_event publishes websocket updates via the pubsub pool;
         # initialise it on this loop so realtime updates keep working.
@@ -52,14 +57,25 @@ def _get_loop_and_factory():
 
 def _reset_state() -> None:
     """Test hook: drop the cached loop/engine so a new DATABASE_URL takes effect."""
-    global _loop, _session_factory
+    global _loop, _session_factory, _engine
     if _loop is not None:
+        if _engine is not None:
+            try:
+                _loop.run_until_complete(_engine.dispose())
+            except Exception:
+                pass
+        from app.services.pubsub import close_redis
+        try:
+            _loop.run_until_complete(close_redis())
+        except Exception:
+            pass
         try:
             _loop.close()
         except Exception:
             pass
     _loop = None
     _session_factory = None
+    _engine = None
 
 
 async def _process(project_id: str, event_data: dict, session_factory) -> str | None:
@@ -79,7 +95,7 @@ async def _process(project_id: str, event_data: dict, session_factory) -> str | 
         return event.event_id
 
 
-@celery_app.task(name="ingest_event")
+@celery_app.task(name="ingest_event", ignore_result=True)
 def ingest_event(project_id: str, event_data: dict) -> str | None:
     """Process one queued event. Fire-once: failures are logged and dropped."""
     loop, factory = _get_loop_and_factory()

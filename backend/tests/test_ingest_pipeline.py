@@ -172,7 +172,15 @@ def test_ingest_event_end_to_end(monkeypatch, db_engine):
             await db.commit()
         await engine.dispose()
 
-    pid = asyncio.run(_setup())
+    # Use an explicit loop rather than asyncio.run() so we never call
+    # set_event_loop / set_event_loop(None) — which would clobber the
+    # session-scoped loop that pytest-asyncio relies on for later async tests.
+    _helper = asyncio.new_event_loop()
+    try:
+        pid = _helper.run_until_complete(_setup())
+    finally:
+        _helper.close()
+
     try:
         result = ingest_tasks.ingest_event.run(pid, {
             "event_id": event_id,
@@ -180,7 +188,21 @@ def test_ingest_event_end_to_end(monkeypatch, db_engine):
             "timestamp": time.time(),
         })
         assert result == event_id
-        asyncio.run(_assert_and_cleanup(pid))
+
+        # Verify warm-loop reuse: a second event through the same cached machinery
+        second_eid = uuid.uuid4().hex
+        result2 = ingest_tasks.ingest_event.run(pid, {
+            "event_id": second_eid,
+            "message": f"IngestBoom again {marker}",
+            "timestamp": time.time(),
+        })
+        assert result2 == second_eid
+
+        _cleanup = asyncio.new_event_loop()
+        try:
+            _cleanup.run_until_complete(_assert_and_cleanup(pid))
+        finally:
+            _cleanup.close()
     finally:
         ingest_tasks._reset_state()
 
