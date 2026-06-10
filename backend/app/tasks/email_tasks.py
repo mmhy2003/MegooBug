@@ -23,7 +23,7 @@ logger = get_logger("tasks.email")
 def _load_smtp_config() -> dict | None:
     """SMTP config from the settings table (sync engine), env fallback.
 
-    Sync counterpart of the API's _get_smtp_config — Celery tasks run
+    Replaces the API's former async _get_smtp_config — Celery tasks run
     outside the async event loop (same pattern as reindex_all).
     """
     try:
