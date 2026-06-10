@@ -337,3 +337,56 @@ async def test_envelope_endpoint_enqueues_each_event(api_client, monkeypatch):
     assert resp.status_code == 200
     assert len(captured) == 1
     assert captured[0][1]["event_id"] == eid
+
+
+async def test_store_endpoint_413_on_gzip_bomb(api_client, monkeypatch):
+    """A small compressed body that inflates past the cap must 413, bounded."""
+    import gzip as _gzip
+    from app.config import settings
+
+    snap = _snapshot()
+    _patch_pipeline(monkeypatch, snap)
+    monkeypatch.setattr(settings, "MAX_EVENT_BYTES", 10_000)
+
+    bomb = _gzip.compress(b'{"message": "' + b"A" * 1_000_000 + b'"}')
+    assert len(bomb) < 10_000  # the compressed body itself passes the raw cap
+
+    resp = await api_client.post(
+        "/api/1/store/?sentry_key=aabbccdd",
+        content=bomb,
+        headers={"Content-Type": "application/json", "Content-Encoding": "gzip"},
+    )
+    assert resp.status_code == 413
+
+
+async def test_envelope_endpoint_caps_event_count(api_client, monkeypatch):
+    from app.api import ingest as ingest_api
+
+    snap = _snapshot()
+    captured = _patch_pipeline(monkeypatch, snap)
+    monkeypatch.setattr(ingest_api, "_MAX_EVENTS_PER_ENVELOPE", 3)
+
+    lines = [json.dumps({"dsn": "http://aabbccdd@localhost/1"})]
+    for i in range(5):
+        lines.append(json.dumps({"type": "event"}))
+        lines.append(json.dumps({"event_id": uuid.uuid4().hex, "message": f"e{i}"}))
+    envelope = "\n".join(lines) + "\n"
+
+    resp = await api_client.post(
+        "/api/1/envelope/",
+        content=envelope.encode(),
+        headers={"Content-Type": "application/x-sentry-envelope"},
+    )
+    assert resp.status_code == 200
+    assert len(captured) == 3  # capped
+
+
+async def test_store_endpoint_400_on_non_dict_json(api_client, monkeypatch):
+    snap = _snapshot()
+    _patch_pipeline(monkeypatch, snap)
+    resp = await api_client.post(
+        "/api/1/store/?sentry_key=aabbccdd",
+        content=b"[1, 2, 3]",
+        headers={"Content-Type": "application/json"},
+    )
+    assert resp.status_code == 400

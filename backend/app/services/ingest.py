@@ -170,7 +170,10 @@ async def ingest_queue_full() -> bool:
 def parse_store_payload(body: bytes) -> dict:
     """Parse a legacy Sentry store JSON payload."""
     try:
-        return json.loads(body)
+        data = json.loads(body)
+        if not isinstance(data, dict):
+            return {}
+        return data
     except (json.JSONDecodeError, ValueError) as e:
         logger.error("Failed to parse store payload: %s", e)
         return {}
@@ -273,7 +276,8 @@ def parse_envelope_payload(body: bytes) -> list[dict]:
             if item_type in ("event", "error", "transaction", "default", ""):
                 try:
                     payload = json.loads(payload_bytes)
-                    events.append(payload)
+                    if isinstance(payload, dict):
+                        events.append(payload)
                 except (json.JSONDecodeError, ValueError) as e:
                     logger.debug(
                         "Failed to parse %s payload (%d bytes): %s",

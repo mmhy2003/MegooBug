@@ -6,7 +6,7 @@ worker, and return immediately. They never touch Postgres on the hot
 path and never hold a DB connection while processing — inline processing
 caused the 2026-06 pool-exhaustion incident class.
 """
-import gzip
+import zlib
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -28,21 +28,36 @@ router = APIRouter()
 
 _RETRY_AFTER = {"Retry-After": "30"}
 
+# Sentry envelopes normally carry one event; cap defends against a single
+# request fanning out into thousands of synchronous broker publishes.
+_MAX_EVENTS_PER_ENVELOPE = 100
+
 
 def _decompress_body(body: bytes, content_encoding: str | None) -> bytes:
-    """Decompress body if gzip/deflate encoded."""
-    if content_encoding in ("gzip", "deflate"):
-        try:
-            return gzip.decompress(body)
-        except Exception as e:
-            logger.warning("Failed to decompress body: %s", e)
-    # Also try auto-detect gzip magic bytes
-    if body[:2] == b"\x1f\x8b":
-        try:
-            return gzip.decompress(body)
-        except Exception:
-            pass
-    return body
+    """Decompress gzip/deflate bodies with a hard output bound.
+
+    Uses a streaming decompressor capped at MAX_EVENT_BYTES + 1 so a
+    compression bomb can never allocate more than the configured limit
+    (gzip ratios reach ~1000:1 — an unbounded decompress of a small body
+    could allocate gigabytes on the event loop).
+    """
+    looks_compressed = content_encoding in ("gzip", "deflate") or body[:2] == b"\x1f\x8b"
+    if not looks_compressed:
+        return body
+    try:
+        d = zlib.decompressobj(wbits=47)  # auto-detect gzip/zlib headers
+        out = d.decompress(body, settings.MAX_EVENT_BYTES + 1)
+        if len(out) > settings.MAX_EVENT_BYTES or d.unconsumed_tail:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Event payload too large",
+            )
+        return out
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Failed to decompress body: %s", e)
+        return body
 
 
 def _check_limits_and_body(body: bytes) -> None:
@@ -88,6 +103,11 @@ async def store_event(project_id: str, request: Request):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid DSN")
 
     raw_body = await request.body()
+    if len(raw_body) > settings.MAX_EVENT_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Event payload too large",
+        )
     body = _decompress_body(raw_body, request.headers.get("content-encoding"))
     _check_limits_and_body(body)
 
@@ -108,6 +128,11 @@ async def store_event(project_id: str, request: Request):
 async def store_envelope(project_id: str, request: Request):
     """Sentry envelope endpoint: accept-and-enqueue each event."""
     raw_body = await request.body()
+    if len(raw_body) > settings.MAX_EVENT_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Event payload too large",
+        )
     body = _decompress_body(raw_body, request.headers.get("content-encoding"))
     _check_limits_and_body(body)
 
@@ -123,6 +148,13 @@ async def store_envelope(project_id: str, request: Request):
     if not events:
         # Envelope may contain non-event items (sessions, etc.) — accept silently
         return {"id": str(uuid.uuid4().hex)}
+
+    if len(events) > _MAX_EVENTS_PER_ENVELOPE:
+        logger.warning(
+            "Envelope truncated: %d events exceeds cap of %d (project=%s)",
+            len(events), _MAX_EVENTS_PER_ENVELOPE, project.slug,
+        )
+        events = events[:_MAX_EVENTS_PER_ENVELOPE]
 
     await _backpressure_guard()
     last_event_id = None
