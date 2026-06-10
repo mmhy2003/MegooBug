@@ -24,11 +24,17 @@ async def _cleanup(db: AsyncSession, cutoff: datetime, batch_size: int = 5000) -
     independently so an interrupted run loses nothing.
     Returns ids so the caller can mirror deletions to Meilisearch.
     """
-    stale_result = await db.execute(select(Issue.id).where(Issue.last_seen < cutoff))
+    # Single DELETE ... RETURNING so the predicate is re-evaluated at delete
+    # time — an issue revived by concurrent ingestion between plan and execute
+    # is skipped, and the returned ids exactly match what was deleted.
+    # NOTE: unbatched — the first run on a long backlog cascades all expired
+    # issues' events in one transaction; acceptable for a nightly job.
+    stale_result = await db.execute(
+        delete(Issue).where(Issue.last_seen < cutoff).returning(Issue.id)
+    )
     stale_issue_ids = list(stale_result.scalars().all())
+    await db.commit()
     if stale_issue_ids:
-        await db.execute(delete(Issue).where(Issue.id.in_(stale_issue_ids)))
-        await db.commit()
         logger.info("Retention: deleted %d stale issues", len(stale_issue_ids))
 
     deleted_event_ids = []

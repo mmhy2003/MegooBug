@@ -115,3 +115,17 @@ async def test_batching_terminates_and_deletes_all(db, project):
 
     assert summary["events_deleted"] == 3
     assert await _count(db, Event) == 0
+
+
+async def test_exact_cutoff_timestamp_is_kept(db, project):
+    """Strict '<' semantics: rows exactly AT the cutoff are retained."""
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=14)
+    issue = await _make_issue(db, project, "exact-fp", last_seen=cutoff)
+    await _make_event(db, issue, timestamp=cutoff)
+
+    summary = await _cleanup(db, cutoff)
+
+    assert summary["issues_deleted"] == 0
+    assert summary["events_deleted"] == 0
+    assert await _count(db, Event) == 1

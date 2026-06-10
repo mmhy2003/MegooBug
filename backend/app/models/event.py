@@ -25,7 +25,7 @@ class Event(Base):
     )
     data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
+        DateTime(timezone=True), nullable=False, index=True
     )
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
