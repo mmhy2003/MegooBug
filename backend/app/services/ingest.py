@@ -166,55 +166,6 @@ async def ingest_queue_full() -> bool:
     return full
 
 
-async def validate_dsn(
-    auth_header: str | None,
-    query_params: dict,
-    db: AsyncSession,
-    envelope_header: dict | None = None,
-) -> Project | None:
-    """Validate DSN auth from X-Sentry-Auth header, query params, or envelope header.
-
-    Returns the Project if valid, None otherwise.
-    """
-    dsn_key = None
-
-    # Try X-Sentry-Auth header
-    if auth_header:
-        match = _SENTRY_AUTH_RE.search(auth_header)
-        if match:
-            dsn_key = match.group(1)
-
-    # Fallback: query param ?sentry_key=...
-    if dsn_key is None:
-        dsn_key = query_params.get("sentry_key")
-
-    # Fallback: DSN in envelope header
-    if dsn_key is None and envelope_header:
-        dsn_str = envelope_header.get("dsn", "")
-        if dsn_str:
-            # DSN format: {PROTOCOL}://{PUBLIC_KEY}:{SECRET_KEY}@{HOST}/{PROJECT_ID}
-            # Extract public key (the user part of the URL)
-            try:
-                from urllib.parse import urlparse
-                parsed = urlparse(dsn_str)
-                if parsed.username:
-                    dsn_key = parsed.username
-            except Exception:
-                pass
-
-    if dsn_key is None:
-        logger.warning("No DSN key found in request")
-        return None
-
-    result = await db.execute(
-        select(Project).where(Project.dsn_public_key == dsn_key)
-    )
-    project = result.scalar_one_or_none()
-    if project is None:
-        logger.warning("Invalid DSN key: %s", dsn_key[:8])
-
-    return project
-
 
 def parse_store_payload(body: bytes) -> dict:
     """Parse a legacy Sentry store JSON payload."""

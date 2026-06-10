@@ -1,27 +1,32 @@
 """Sentry-compatible ingest endpoints.
 
-These endpoints accept events from Sentry SDKs and CLI tools.
-Authentication is via DSN public key, not user JWT.
+Accept-and-enqueue: these endpoints validate the DSN (cached), enforce
+size and queue-depth limits, queue the event for the celery-ingest
+worker, and return immediately. They never touch Postgres on the hot
+path and never hold a DB connection while processing — inline processing
+caused the 2026-06 pool-exhaustion incident class.
 """
 import gzip
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException, Request, status
 
-from app.database import get_db
+from app.config import settings
 from app.services.ingest import (
-    validate_dsn,
+    ingest_queue_full,
     parse_store_payload,
     parse_envelope_header,
     parse_envelope_payload,
-    process_event,
+    resolve_dsn,
 )
+from app.tasks.ingest_tasks import ingest_event
 from app.logging import get_logger
 
 logger = get_logger("api.ingest")
 
 router = APIRouter()
+
+_RETRY_AFTER = {"Retry-After": "30"}
 
 
 def _decompress_body(body: bytes, content_encoding: str | None) -> bytes:
@@ -40,28 +45,51 @@ def _decompress_body(body: bytes, content_encoding: str | None) -> bytes:
     return body
 
 
-@router.post("/{project_id}/store/")
-async def store_event(
-    project_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Legacy Sentry store endpoint. Accepts JSON event payload.
+def _check_limits_and_body(body: bytes) -> None:
+    """Shared 413 guard."""
+    if len(body) > settings.MAX_EVENT_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Event payload too large",
+        )
 
-    Auth via X-Sentry-Auth header or ?sentry_key= query param.
-    """
-    # Validate DSN
+
+async def _backpressure_guard() -> None:
+    if await ingest_queue_full():
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Ingestion queue full, retry later",
+            headers=_RETRY_AFTER,
+        )
+
+
+def _enqueue(project_id: str, event_data: dict) -> str:
+    """Queue one event; returns its event_id. 503 if the broker is unreachable."""
+    event_id = event_data.get("event_id") or uuid.uuid4().hex
+    event_data["event_id"] = event_id
+    try:
+        ingest_event.delay(project_id, event_data)
+    except Exception as e:
+        logger.error("Failed to enqueue event (broker down?): %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ingestion temporarily unavailable",
+        )
+    return event_id
+
+
+@router.post("/{project_id}/store/")
+async def store_event(project_id: str, request: Request):
+    """Legacy Sentry store endpoint: accept-and-enqueue."""
     auth_header = request.headers.get("x-sentry-auth", "")
     query_params = dict(request.query_params)
-    project = await validate_dsn(auth_header, query_params, db)
-
+    project = await resolve_dsn(auth_header, query_params)
     if project is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid DSN")
 
-    # Parse body (handle gzip)
     raw_body = await request.body()
-    content_encoding = request.headers.get("content-encoding")
-    body = _decompress_body(raw_body, content_encoding)
+    body = _decompress_body(raw_body, request.headers.get("content-encoding"))
+    _check_limits_and_body(body)
 
     event_data = parse_store_payload(body)
     if not event_data:
@@ -71,69 +99,35 @@ async def store_event(
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payload")
 
-    # Process
-    issue, event = await process_event(project, event_data, db)
-
-    logger.info(
-        "Event stored: %s (project=%s, issue=%s)",
-        event.event_id, project.slug, issue.id,
-    )
-
-    return {"id": event.event_id}
+    await _backpressure_guard()
+    event_id = _enqueue(project.id, event_data)
+    return {"id": event_id}
 
 
 @router.post("/{project_id}/envelope/")
-async def store_envelope(
-    project_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Sentry envelope endpoint. Accepts newline-delimited envelope format.
-
-    Used by modern Sentry SDKs.
-    Auth via X-Sentry-Auth header, ?sentry_key= query param, or DSN in envelope header.
-    """
-    # Parse body first (handle gzip) so we can read the envelope header for DSN auth
+async def store_envelope(project_id: str, request: Request):
+    """Sentry envelope endpoint: accept-and-enqueue each event."""
     raw_body = await request.body()
-    content_encoding = request.headers.get("content-encoding")
-    body = _decompress_body(raw_body, content_encoding)
+    body = _decompress_body(raw_body, request.headers.get("content-encoding"))
+    _check_limits_and_body(body)
 
-    # Parse envelope header for potential DSN auth fallback
     envelope_header, _ = parse_envelope_header(body)
 
-    # Validate DSN (try header, query params, then envelope header DSN)
     auth_header = request.headers.get("x-sentry-auth", "")
     query_params = dict(request.query_params)
-    project = await validate_dsn(auth_header, query_params, db, envelope_header=envelope_header)
-
+    project = await resolve_dsn(auth_header, query_params, envelope_header=envelope_header)
     if project is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid DSN")
 
-    logger.debug(
-        "Envelope received: project=%s, raw=%d bytes, decoded=%d bytes, encoding=%s",
-        project.slug, len(raw_body), len(body), content_encoding,
-    )
-
     events = parse_envelope_payload(body)
-
     if not events:
         # Envelope may contain non-event items (sessions, etc.) — accept silently
-        logger.debug(
-            "No actionable events in envelope (project=%s, body_preview=%s)",
-            project.slug, body[:200].decode("utf-8", errors="replace"),
-        )
         return {"id": str(uuid.uuid4().hex)}
 
-    # Process each event in the envelope
+    await _backpressure_guard()
     last_event_id = None
     for event_data in events:
-        issue, event = await process_event(project, event_data, db)
-        last_event_id = event.event_id
+        last_event_id = _enqueue(project.id, event_data)
 
-    logger.info(
-        "Envelope processed: %d events (project=%s)",
-        len(events), project.slug,
-    )
-
+    logger.debug("Envelope queued: %d events (project=%s)", len(events), project.slug)
     return {"id": last_event_id or str(uuid.uuid4().hex)}
-

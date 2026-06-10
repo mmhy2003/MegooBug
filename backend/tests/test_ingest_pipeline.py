@@ -1,4 +1,5 @@
 """Tests for the async ingestion pipeline: DSN cache, backpressure, endpoints, worker."""
+import json
 import time
 import uuid
 
@@ -219,3 +220,120 @@ def test_ingest_event_drops_missing_project(monkeypatch, db_engine):
         assert result is None
     finally:
         ingest_tasks._reset_state()
+
+
+# ── Thin endpoints ──────────────────────────────────────────────────
+
+
+@pytest.fixture
+async def api_client():
+    from httpx import ASGITransport, AsyncClient
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+
+def _patch_pipeline(monkeypatch, snapshot, queue_full=False):
+    from app.api import ingest as ingest_api
+
+    captured = []
+
+    async def _resolve(auth_header, query_params, envelope_header=None):
+        return snapshot
+
+    async def _full():
+        return queue_full
+
+    monkeypatch.setattr(ingest_api, "resolve_dsn", _resolve)
+    monkeypatch.setattr(ingest_api, "ingest_queue_full", _full)
+    monkeypatch.setattr(
+        ingest_api.ingest_event, "delay",
+        lambda project_id, event_data: captured.append((project_id, event_data)),
+    )
+    return captured
+
+
+async def test_store_endpoint_enqueues_and_returns_200(api_client, monkeypatch):
+    snap = _snapshot()
+    captured = _patch_pipeline(monkeypatch, snap)
+
+    eid = uuid.uuid4().hex
+    resp = await api_client.post(
+        "/api/1/store/?sentry_key=aabbccdd",
+        json={"event_id": eid, "message": "queued!"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"id": eid}
+    assert len(captured) == 1
+    project_id, event_data = captured[0]
+    assert project_id == snap.id
+    assert event_data["message"] == "queued!"
+
+
+async def test_store_endpoint_401_unknown_dsn(api_client, monkeypatch):
+    _patch_pipeline(monkeypatch, snapshot=None)
+    resp = await api_client.post("/api/1/store/?sentry_key=bad", json={"message": "x"})
+    assert resp.status_code == 401
+
+
+async def test_store_endpoint_413_oversized(api_client, monkeypatch):
+    from app.config import settings
+    snap = _snapshot()
+    _patch_pipeline(monkeypatch, snap)
+    monkeypatch.setattr(settings, "MAX_EVENT_BYTES", 50)
+
+    resp = await api_client.post(
+        "/api/1/store/?sentry_key=aabbccdd",
+        json={"message": "Y" * 200},
+    )
+    assert resp.status_code == 413
+
+
+async def test_store_endpoint_429_when_queue_full(api_client, monkeypatch):
+    snap = _snapshot()
+    _patch_pipeline(monkeypatch, snap, queue_full=True)
+
+    resp = await api_client.post(
+        "/api/1/store/?sentry_key=aabbccdd", json={"message": "x"},
+    )
+    assert resp.status_code == 429
+    assert resp.headers.get("retry-after") == "30"
+
+
+async def test_store_endpoint_503_when_broker_down(api_client, monkeypatch):
+    from app.api import ingest as ingest_api
+    snap = _snapshot()
+    _patch_pipeline(monkeypatch, snap)
+
+    def _broker_down(project_id, event_data):
+        raise ConnectionError("redis unreachable")
+
+    monkeypatch.setattr(ingest_api.ingest_event, "delay", _broker_down)
+    resp = await api_client.post(
+        "/api/1/store/?sentry_key=aabbccdd", json={"message": "x"},
+    )
+    assert resp.status_code == 503
+
+
+async def test_envelope_endpoint_enqueues_each_event(api_client, monkeypatch):
+    snap = _snapshot()
+    captured = _patch_pipeline(monkeypatch, snap)
+
+    eid = uuid.uuid4().hex
+    envelope = (
+        json.dumps({"dsn": "http://aabbccdd@localhost/1"}) + "\n"
+        + json.dumps({"type": "event"}) + "\n"
+        + json.dumps({"event_id": eid, "message": "from envelope"}) + "\n"
+    )
+    resp = await api_client.post(
+        "/api/1/envelope/",
+        content=envelope.encode(),
+        headers={"Content-Type": "application/x-sentry-envelope"},
+    )
+
+    assert resp.status_code == 200
+    assert len(captured) == 1
+    assert captured[0][1]["event_id"] == eid
