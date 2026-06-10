@@ -129,3 +129,13 @@ async def test_exact_cutoff_timestamp_is_kept(db, project):
     assert summary["issues_deleted"] == 0
     assert summary["events_deleted"] == 0
     assert await _count(db, Event) == 1
+
+
+def test_cleanup_old_data_disabled_noops(monkeypatch):
+    """RETENTION_DAYS<=0 must short-circuit before touching DB or Meilisearch."""
+    from app.config import settings
+    from app.tasks.cleanup_tasks import cleanup_old_data
+
+    monkeypatch.setattr(settings, "RETENTION_DAYS", 0)
+    result = cleanup_old_data.run()
+    assert result == {"issues_deleted": 0, "events_deleted": 0, "skipped": True}
