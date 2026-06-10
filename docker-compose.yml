@@ -68,7 +68,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: celery -A app.worker worker --loglevel=info
+    # -B embeds the beat scheduler — move beat to its own service if workers scale beyond one
+    command: celery -A app.worker worker -B --loglevel=info
     env_file: .env
     depends_on:
       postgres:
