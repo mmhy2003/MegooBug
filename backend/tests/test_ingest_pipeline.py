@@ -390,3 +390,23 @@ async def test_store_endpoint_400_on_non_dict_json(api_client, monkeypatch):
         headers={"Content-Type": "application/json"},
     )
     assert resp.status_code == 400
+
+
+async def test_store_endpoint_accepts_valid_gzip(api_client, monkeypatch):
+    """Happy-path compressed body: decompression must yield the original event."""
+    import gzip as _gzip
+
+    snap = _snapshot()
+    captured = _patch_pipeline(monkeypatch, snap)
+
+    eid = uuid.uuid4().hex
+    body = _gzip.compress(json.dumps({"event_id": eid, "message": "gzipped"}).encode())
+    resp = await api_client.post(
+        "/api/1/store/?sentry_key=aabbccdd",
+        content=body,
+        headers={"Content-Type": "application/json", "Content-Encoding": "gzip"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"id": eid}
+    assert captured[0][1]["message"] == "gzipped"
