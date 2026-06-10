@@ -316,14 +316,7 @@ async def add_member(
             except Exception:
                 pass
 
-        if assigned_pref.get("email", True):
-            try:
-                from app.services.email import send_invite_email
-                # No dedicated "assigned to project" email template, so we skip email for now
-                # Email notification for project assignment can be added later
-                pass
-            except Exception:
-                pass
+        # No dedicated "assigned to project" email template — email skipped.
 
     except Exception as e:
         logger.warning("Failed to send assignment notification: %s", e)

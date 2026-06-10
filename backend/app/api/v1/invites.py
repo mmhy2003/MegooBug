@@ -12,7 +12,10 @@ from app.models.invite import Invite
 from app.models.user import User
 from app.schemas.invite import InviteCreate, InviteListResponse, InviteResponse
 from app.services.auth import create_invite_token
-from app.services.email import send_invite_email
+from app.tasks.email_tasks import send_invite_email
+from app.logging import get_logger
+
+logger = get_logger("api.invites")
 
 router = APIRouter()
 
@@ -58,14 +61,17 @@ async def create_invite(
     await db.flush()
     await db.refresh(invite)
 
-    # Send invite email (fire-and-forget — don't fail the invite if email fails)
-    await send_invite_email(
-        db=db,
-        to_email=data.email,
-        invite_token=invite.token,
-        role=data.role.value if hasattr(data.role, 'value') else str(data.role),
-        invited_by_name=current_user.name,
-    )
+    # Queue invite email on the worker (fire-and-forget — a dead broker
+    # must not fail the invite; "sent" now means "queued")
+    try:
+        send_invite_email.delay({
+            "to_email": data.email,
+            "invite_token": invite.token,
+            "role": data.role.value if hasattr(data.role, 'value') else str(data.role),
+            "invited_by_name": current_user.name,
+        })
+    except Exception as e:
+        logger.warning("Failed to queue invite email to %s: %s", data.email, e)
 
     return invite
 
