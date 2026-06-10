@@ -112,7 +112,7 @@ async def test_dsn_cache_is_bounded(monkeypatch):
 
 # ── Worker task end-to-end ──────────────────────────────────────────
 
-def test_ingest_event_end_to_end(monkeypatch):
+def test_ingest_event_end_to_end(monkeypatch, db_engine):
     """The real task body against the test DB: creates issue + event rows."""
     import asyncio
     from sqlalchemy import delete, select
@@ -185,7 +185,7 @@ def test_ingest_event_end_to_end(monkeypatch):
         ingest_tasks._reset_state()
 
 
-def test_ingest_event_drops_missing_project(monkeypatch):
+def test_ingest_event_drops_missing_project(monkeypatch, db_engine):
     from app.config import settings as app_settings
     from app.tasks import ingest_tasks
     from tests.conftest import TEST_URL
