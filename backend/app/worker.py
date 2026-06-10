@@ -22,6 +22,7 @@ celery_app.conf.update(
 celery_app.conf.include = [
     "app.tasks.event_tasks",
     "app.tasks.cleanup_tasks",
+    "app.tasks.email_tasks",
 ]
 
 # Periodic tasks (beat runs embedded in the worker via `-B`)

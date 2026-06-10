@@ -67,6 +67,20 @@ LOGO_DATA_URI = (
 )
 
 
+def _env_smtp_config() -> dict | None:
+    """SMTP config from environment variables, or None if not configured."""
+    if not app_settings.SMTP_HOST:
+        return None
+    return {
+        "host": app_settings.SMTP_HOST,
+        "port": app_settings.SMTP_PORT,
+        "username": app_settings.SMTP_USERNAME,
+        "password": app_settings.SMTP_PASSWORD,
+        "from_email": app_settings.SMTP_FROM_EMAIL or "noreply@megoobug.local",
+        "use_tls": app_settings.SMTP_USE_TLS,
+    }
+
+
 async def _get_smtp_config(db: AsyncSession) -> dict | None:
     """Load SMTP config from DB settings, falling back to env vars."""
     result = await db.execute(select(Setting).where(Setting.key == "smtp"))
