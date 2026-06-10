@@ -6,13 +6,17 @@ event fingerprinting, deduplication, and issue grouping.
 import hashlib
 import json
 import re
+import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import parse_qs
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
+from app.database import async_session_factory
 from app.models.project import Project, ProjectMember
 from app.models.issue import Issue, IssueStatus, IssueLevel
 from app.models.event import Event
@@ -37,6 +41,119 @@ except Exception:
 # Regex to extract DSN public key from X-Sentry-Auth header
 # Format: Sentry sentry_key=<key>, sentry_version=7, ...
 _SENTRY_AUTH_RE = re.compile(r"sentry_key=([a-f0-9]+)")
+
+
+def _extract_dsn_key(
+    auth_header: str | None,
+    query_params: dict,
+    envelope_header: dict | None = None,
+) -> str | None:
+    """Extract the DSN public key from header, query param, or envelope DSN."""
+    if auth_header:
+        match = _SENTRY_AUTH_RE.search(auth_header)
+        if match:
+            return match.group(1)
+
+    key = query_params.get("sentry_key")
+    if key:
+        return key
+
+    if envelope_header:
+        dsn_str = envelope_header.get("dsn", "")
+        if dsn_str:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(dsn_str)
+                if parsed.username:
+                    return parsed.username
+            except Exception:
+                pass
+
+    return None
+
+
+@dataclass(frozen=True)
+class ProjectSnapshot:
+    """Minimal project identity for the ingest hot path."""
+    id: str
+    name: str
+    slug: str
+
+
+_DSN_CACHE: dict[str, tuple[ProjectSnapshot | None, float]] = {}
+_DSN_CACHE_TTL = 60.0       # seconds, valid keys
+_DSN_NEGATIVE_TTL = 10.0    # seconds, unknown keys (don't hammer the DB on floods)
+
+
+def clear_dsn_cache() -> None:
+    """Test hook."""
+    _DSN_CACHE.clear()
+
+
+async def _fetch_project_snapshot(dsn_key: str) -> ProjectSnapshot | None:
+    """DB lookup for a DSN key — only called on cache miss."""
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(Project).where(Project.dsn_public_key == dsn_key)
+        )
+        project = result.scalar_one_or_none()
+    if project is None:
+        logger.warning("Invalid DSN key: %s", dsn_key[:8])
+        return None
+    return ProjectSnapshot(id=str(project.id), name=project.name, slug=project.slug)
+
+
+async def resolve_dsn(
+    auth_header: str | None,
+    query_params: dict,
+    envelope_header: dict | None = None,
+) -> ProjectSnapshot | None:
+    """Resolve DSN auth to a project snapshot, with in-process TTL caching."""
+    dsn_key = _extract_dsn_key(auth_header, query_params, envelope_header)
+    if dsn_key is None:
+        logger.warning("No DSN key found in request")
+        return None
+
+    now = time.monotonic()
+    cached = _DSN_CACHE.get(dsn_key)
+    if cached is not None and now < cached[1]:
+        return cached[0]
+
+    snapshot = await _fetch_project_snapshot(dsn_key)
+    ttl = _DSN_CACHE_TTL if snapshot is not None else _DSN_NEGATIVE_TTL
+    _DSN_CACHE[dsn_key] = (snapshot, now + ttl)
+    return snapshot
+
+
+_DEPTH_CACHE = {"full": False, "expires": 0.0}
+
+
+def clear_depth_cache() -> None:
+    """Test hook."""
+    _DEPTH_CACHE.update(full=False, expires=0.0)
+
+
+async def _queue_depth(queue: str) -> int:
+    from app.services.pubsub import queue_depth
+    return await queue_depth(queue)
+
+
+async def ingest_queue_full() -> bool:
+    """True when the ingest queue exceeds INGEST_QUEUE_MAX.
+
+    Result cached ~1s; fails OPEN (a broken depth check must not block
+    ingestion — the bounded publish timeout is the harder backstop).
+    """
+    now = time.monotonic()
+    if now < _DEPTH_CACHE["expires"]:
+        return _DEPTH_CACHE["full"]
+    try:
+        full = await _queue_depth("ingest") > settings.INGEST_QUEUE_MAX
+    except Exception as e:
+        logger.warning("Ingest queue depth check failed (failing open): %s", e)
+        full = False
+    _DEPTH_CACHE.update(full=full, expires=now + 1.0)
+    return full
 
 
 async def validate_dsn(

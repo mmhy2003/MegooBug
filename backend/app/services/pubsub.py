@@ -72,3 +72,11 @@ async def publish_global(payload: dict) -> None:
         await r.publish("megoobug:global", json.dumps(payload))
     except Exception as e:
         logger.warning("Failed to publish global event: %s", e)
+
+
+# ── Queue inspection ─────────────────────────────────────────────────
+
+async def queue_depth(queue: str) -> int:
+    """Length of a Celery queue's Redis list (Celery queues are plain lists)."""
+    r = _get_redis()
+    return int(await r.llen(queue))
