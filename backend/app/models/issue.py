@@ -53,7 +53,7 @@ class Issue(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     last_seen: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )
     event_count: Mapped[int] = mapped_column(Integer, default=1)
     metadata_: Mapped[dict | None] = mapped_column(

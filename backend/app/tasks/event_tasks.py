@@ -72,10 +72,12 @@ def index_event_to_meilisearch(event_data: dict):
 
 @celery_app.task(name="reindex_all")
 def reindex_all():
-    """Full re-index of all issues and events into Meilisearch.
+    """Full rebuild of the issues, events, and projects search indexes.
 
-    Called via `make reindex`. Uses synchronous DB access since Celery
-    tasks run outside the async event loop.
+    Clears each index, then re-adds everything from Postgres. Invoked via
+    `make reindex` (python -m app.scripts.reindex) or as a Celery task.
+    Uses synchronous DB access since Celery tasks run outside the async
+    event loop.
     """
     try:
         import meilisearch
@@ -93,6 +95,12 @@ def reindex_all():
 
         # Configure indexes
         _configure_indexes(client)
+
+        # Full rebuild: clear all indexes first so rows deleted from Postgres
+        # cannot survive as ghost documents in search.
+        client.index("issues").delete_all_documents()
+        client.index("events").delete_all_documents()
+        client.index("projects").delete_all_documents()
 
         # Re-index issues
         with engine.connect() as conn:
@@ -129,6 +137,31 @@ def reindex_all():
             if projects:
                 client.index("projects").add_documents(projects, primary_key="id")
                 logger.info("Re-indexed %d projects", len(projects))
+
+            # Re-index events (batched — events is the largest table)
+            result = conn.execution_options(stream_results=True).execute(text(
+                "SELECT id, event_id, issue_id, project_id, data, timestamp FROM events"
+            ))
+            batch = []
+            total_events = 0
+            for row in result:
+                batch.append({
+                    "id": str(row[0]),
+                    "event_id": row[1] or "",
+                    "issue_id": str(row[2]),
+                    "project_id": str(row[3]),
+                    "message": _extract_searchable_text(row[4] or {}),
+                    "timestamp": row[5].isoformat() if row[5] else "",
+                })
+                if len(batch) >= 1000:
+                    client.index("events").add_documents(batch, primary_key="id")
+                    total_events += len(batch)
+                    batch = []
+            if batch:
+                client.index("events").add_documents(batch, primary_key="id")
+                total_events += len(batch)
+            if total_events:
+                logger.info("Re-indexed %d events", total_events)
 
         engine.dispose()
         logger.info("Full re-index complete")

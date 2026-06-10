@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     MEILISEARCH_URL: str = "http://meilisearch:7700"
     MEILISEARCH_MASTER_KEY: str = "change-me-to-a-random-32-char-string"
 
+    # ── Retention ──
+    # Days to keep ingested events/issues. 0 or negative disables cleanup.
+    RETENTION_DAYS: int = 14
+
     # ── Seed Admin ──
     ADMIN_EMAIL: str = "admin@megoobug.local"
     ADMIN_PASSWORD: str = "admin123456"
