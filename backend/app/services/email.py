@@ -74,9 +74,8 @@ def _env_smtp_config() -> dict | None:
     }
 
 
-
 def _send(cfg: dict, to: str, subject: str, html_body: str, text_body: str):
-    """Synchronous SMTP send (called from async context via thread)."""
+    """Synchronous SMTP send (called from Celery worker tasks)."""
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = cfg.get("from_email", "noreply@megoobug.local")
@@ -492,6 +491,3 @@ def _build_issue_notification_html(
     </table>
 </body>
 </html>"""
-
-
-
