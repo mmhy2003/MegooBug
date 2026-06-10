@@ -107,8 +107,11 @@ def _mirror_to_meilisearch(summary: dict) -> None:
         event_ids = [str(e) for e in summary["deleted_event_ids"]]
         if event_ids:
             client.index("events").delete_documents(event_ids)
-    except Exception as e:
-        logger.error("Retention: Meilisearch mirror failed (search will self-heal on reindex): %s", e)
+    except Exception:
+        logger.warning(
+            "Retention: Meilisearch mirror failed — search has ghost documents until the next reindex_all run",
+            exc_info=True,
+        )
 
 
 @celery_app.task(name="cleanup_old_data")

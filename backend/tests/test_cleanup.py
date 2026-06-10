@@ -134,8 +134,33 @@ async def test_exact_cutoff_timestamp_is_kept(db, project):
 def test_cleanup_old_data_disabled_noops(monkeypatch):
     """RETENTION_DAYS<=0 must short-circuit before touching DB or Meilisearch."""
     from app.config import settings
-    from app.tasks.cleanup_tasks import cleanup_old_data
+    from app.tasks import cleanup_tasks
 
     monkeypatch.setattr(settings, "RETENTION_DAYS", 0)
-    result = cleanup_old_data.run()
+
+    def _must_not_run(*args, **kwargs):
+        raise AssertionError("disabled cleanup must not touch DB or Meilisearch")
+
+    monkeypatch.setattr(cleanup_tasks, "_run_cleanup", _must_not_run)
+    monkeypatch.setattr(cleanup_tasks, "_mirror_to_meilisearch", _must_not_run)
+
+    result = cleanup_tasks.cleanup_old_data.run()
     assert result == {"issues_deleted": 0, "events_deleted": 0, "skipped": True}
+
+
+def test_mirror_swallows_meilisearch_failures(monkeypatch):
+    """The Meilisearch mirror is best-effort: failures must not raise."""
+    import meilisearch
+    from app.tasks.cleanup_tasks import _mirror_to_meilisearch
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("meili down")
+
+    monkeypatch.setattr(meilisearch, "Client", _boom)
+    # Must not raise despite the client blowing up
+    _mirror_to_meilisearch({
+        "stale_issue_ids": [uuid.uuid4()],
+        "deleted_event_ids": [uuid.uuid4()],
+        "issues_deleted": 1,
+        "events_deleted": 1,
+    })
