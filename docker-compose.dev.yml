@@ -100,6 +100,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Resource caps (isolation backstop). deploy.resources.limits is honored by
+    # Docker Compose v2 (`docker compose up`); v1/older needs `--compatibility`.
     deploy:
       resources:
         limits:

@@ -65,3 +65,28 @@ async def test_dashboard_cache_miss_queries_and_sets(monkeypatch, db):
     assert key == "stats:dashboard:all"
     assert value == result
     assert ttl == settings.STATS_CACHE_TTL
+
+
+async def test_dashboard_cache_miss_scoped_user_uses_scope_key(monkeypatch, db):
+    pid = uuid.uuid4()
+
+    async def _miss(key):
+        return None
+
+    sets = []
+
+    async def _set(key, value, ttl):
+        sets.append((key, value, ttl))
+
+    async def _scoped(user, db_):
+        return [pid]
+
+    monkeypatch.setattr(stats, "cache_get_json", _miss)
+    monkeypatch.setattr(stats, "cache_set_json", _set)
+    monkeypatch.setattr(stats, "get_user_project_ids", _scoped)
+
+    await stats.dashboard_stats(current_user=object(), db=db)
+
+    assert len(sets) == 1
+    assert sets[0][0] == stats._dashboard_cache_key([pid])
+    assert sets[0][0] != "stats:dashboard:all"

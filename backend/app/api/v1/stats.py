@@ -2,7 +2,7 @@
 import hashlib
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,7 +90,7 @@ async def project_trends(
     slug: str,
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-    days: int = 7,
+    days: int = Query(7, ge=1, le=90),
 ):
     """Get error trend data for a project. Must be a member or admin."""
     result = await db.execute(
