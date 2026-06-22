@@ -80,3 +80,31 @@ async def queue_depth(queue: str) -> int:
     """Length of a Celery queue's Redis list (Celery queues are plain lists)."""
     r = _get_redis()
     return int(await r.llen(queue))
+
+
+# ── JSON cache (best-effort, fail-open) ──────────────────────────────
+
+async def cache_get_json(key: str) -> dict | None:
+    """Return the cached JSON value for `key`, or None on miss/any error.
+
+    Fail-open: a missing pool or a Redis error is treated as a cache miss so
+    the caller falls through to its source of truth. Never raises.
+    """
+    try:
+        r = _get_redis()
+        raw = await r.get(key)
+        if raw is None:
+            return None
+        return json.loads(raw)
+    except Exception as e:
+        logger.warning("cache_get_json failed for %s: %s", key, e)
+        return None
+
+
+async def cache_set_json(key: str, value, ttl: int) -> None:
+    """Best-effort cache write with a TTL (seconds). Swallows all errors."""
+    try:
+        r = _get_redis()
+        await r.set(key, json.dumps(value), ex=ttl)
+    except Exception as e:
+        logger.warning("cache_set_json failed for %s: %s", key, e)

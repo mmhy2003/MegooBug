@@ -45,6 +45,21 @@ class Settings(BaseSettings):
     MAX_EVENT_BYTES: int = 1_048_576
     # Return 429 when the Redis ingest queue is deeper than this.
     INGEST_QUEUE_MAX: int = 50_000
+    # Prefork concurrency for the celery-ingest worker.
+    INGEST_CONCURRENCY: int = 4
+    # Optional Celery per-worker rate limit for ingest_event (e.g. "200/s").
+    # Unset = no cap; the queue + INGEST_QUEUE_MAX backpressure absorb bursts.
+    INGEST_RATE_LIMIT: Optional[str] = None
+
+    # ── Database pool (per process) ──
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 5
+
+    # ── Stats cache ──
+    # Seconds to cache dashboard aggregate results in Redis. The dashboard
+    # layers live deltas on top via the stats_update websocket, so a short
+    # stale base is invisible while removing repeated heavy counts from Postgres.
+    STATS_CACHE_TTL: int = 30
 
     # ── Seed Admin ──
     ADMIN_EMAIL: str = "admin@megoobug.local"

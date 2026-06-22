@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    command: postgres -c max_connections=200
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-megoo}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
@@ -88,13 +89,20 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: celery -A app.worker worker -Q ingest --concurrency=4 --loglevel=info
+    command: celery -A app.worker worker -Q ingest --concurrency=${INGEST_CONCURRENCY:-4} --loglevel=info
     env_file: .env
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Resource caps (isolation backstop). deploy.resources.limits is honored by
+    # Docker Compose v2 (`docker compose up`); v1/older needs `--compatibility`.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1g
     networks:
       - megoobug
 

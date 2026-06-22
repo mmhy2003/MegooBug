@@ -134,6 +134,8 @@ Adds the three indexes behind the hot read queries, declared on the models (so `
 
 **Deviation from spec (deliberate):** the spec proposed a *partial* index `ON issues(project_id) WHERE status = 'unresolved'`. `IssueStatus` is a SQLAlchemy `Enum(IssueStatus)` whose stored label is the member *name*, making a hand-written `WHERE status = '...'` literal fragile. We instead use a plain composite `(project_id, status)` index (no predicate literal). It serves the project-scoped unresolved count *and* the project issues-list filter (`app/api/v1/issues.py` filters `project_id == X AND status == ...`); the admin-wide unresolved count is now a cold path (cached), so the non-partial index is the robust choice.
 
+**Deviation #2 (user-approved during execution):** the steps below show `CREATE INDEX CONCURRENTLY` in an `autocommit_block()`. This **deadlocks** with the app's auto-migrate, which runs Alembic during startup while holding `pg_advisory_lock(727274)` on an open transaction (CONCURRENTLY waits for that transaction to finish — it never does). The migration as committed uses **plain `op.create_index(..., if_not_exists=True)`** (and `if_exists=True` in downgrade). The one-time build briefly write-locks `events`/`issues` (ingest INSERTs are queued, reads unaffected); operators may pre-create indexes manually with `CONCURRENTLY` for very large tables. See migration `f6a7b8c9d0e1` docstring.
+
 **Files:**
 - Modify: `backend/app/models/event.py` (add `index=True` to `received_at`; add `__table_args__`)
 - Modify: `backend/app/models/issue.py` (append an `Index` to the existing `__table_args__`)

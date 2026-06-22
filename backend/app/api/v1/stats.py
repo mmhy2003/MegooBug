@@ -1,18 +1,38 @@
 """Dashboard stats and trend data endpoints."""
+import hashlib
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, get_user_project_ids, check_project_access
 from app.models.project import Project
 from app.models.issue import Issue, IssueStatus
 from app.models.event import Event
 from app.models.user import User
+from app.services.pubsub import cache_get_json, cache_set_json
 
 router = APIRouter()
+
+_TRENDS_CACHE_TTL = 60  # seconds; daily buckets move slowly
+
+
+def _dashboard_cache_key(project_ids) -> str:
+    """Cache key scoped to the caller's project access (preserves RBAC).
+
+    Admins (project_ids is None) share one key; scoped users get a key derived
+    from their sorted project ids so two callers with the same scope share a
+    cache entry and no payload leaks across scopes.
+    """
+    if project_ids is None:
+        return "stats:dashboard:all"
+    digest = hashlib.sha1(
+        ",".join(sorted(str(pid) for pid in project_ids)).encode()
+    ).hexdigest()
+    return f"stats:dashboard:{digest}"
 
 
 @router.get("/stats/dashboard")
@@ -21,11 +41,16 @@ async def dashboard_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """Get aggregated dashboard stats. Non-admins see only their assigned projects."""
+    # Get user's project scope (cheap; also forms the cache key)
+    project_ids = await get_user_project_ids(current_user, db)
+
+    cache_key = _dashboard_cache_key(project_ids)
+    cached = await cache_get_json(cache_key)
+    if cached is not None:
+        return cached
+
     now = datetime.now(timezone.utc)
     last_24h = now - timedelta(hours=24)
-
-    # Get user's project scope
-    project_ids = await get_user_project_ids(current_user, db)
 
     # Total projects
     projects_query = select(func.count(Project.id))
@@ -47,15 +72,17 @@ async def dashboard_stats(
 
     # Active users (global count — not scoped)
     active_users = await db.execute(
-        select(func.count(User.id)).where(User.is_active == True)
+        select(func.count(User.id)).where(User.is_active.is_(True))
     )
 
-    return {
+    result = {
         "total_projects": projects_count.scalar() or 0,
         "errors_24h": errors_24h.scalar() or 0,
         "unresolved_issues": unresolved.scalar() or 0,
         "active_users": active_users.scalar() or 0,
     }
+    await cache_set_json(cache_key, result, settings.STATS_CACHE_TTL)
+    return result
 
 
 @router.get("/stats/projects/{slug}/trends")
@@ -63,7 +90,7 @@ async def project_trends(
     slug: str,
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-    days: int = 7,
+    days: int = Query(7, ge=1, le=90),
 ):
     """Get error trend data for a project. Must be a member or admin."""
     result = await db.execute(
@@ -74,6 +101,11 @@ async def project_trends(
         raise HTTPException(status_code=404, detail="Project not found")
     if not await check_project_access(current_user, project.id, db):
         raise HTTPException(status_code=404, detail="Project not found")
+
+    cache_key = f"stats:trends:{project.id}:{days}"
+    cached = await cache_get_json(cache_key)
+    if cached is not None:
+        return cached
 
     now = datetime.now(timezone.utc)
     start = now - timedelta(days=days)
@@ -104,8 +136,10 @@ async def project_trends(
             "count": trend_map.get(day, 0),
         })
 
-    return {
+    payload = {
         "project": slug,
         "days": days,
         "data": data,
     }
+    await cache_set_json(cache_key, payload, _TRENDS_CACHE_TTL)
+    return payload
