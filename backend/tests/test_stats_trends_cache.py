@@ -50,8 +50,12 @@ async def test_trends_cache_hit_short_circuits(monkeypatch, db, project):
         assert key == f"stats:trends:{project.id}:7"
         return sentinel
 
+    async def _no_set(key, value, ttl):
+        pass
+
     monkeypatch.setattr(stats, "check_project_access", _allow)
     monkeypatch.setattr(stats, "cache_get_json", _hit)
+    monkeypatch.setattr(stats, "cache_set_json", _no_set)
 
     result = await stats.project_trends(
         slug=project.slug, current_user=object(), db=db, days=7,
