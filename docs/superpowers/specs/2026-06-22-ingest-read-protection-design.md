@@ -58,10 +58,20 @@ considered and deferred:
 
 ### 1. Indexes (one Alembic migration)
 
-Add, using `CREATE INDEX CONCURRENTLY` inside
-`op.get_context().autocommit_block()` so a possibly-large `events` table is not
-write-locked during deploy (the migration therefore runs outside the normal
-transaction wrapper — expected for concurrent builds):
+Add the following indexes via Alembic, idempotent with `if_not_exists`:
+
+> **Update (2026-06-22, post-implementation, user-approved):** The original
+> design specified `CREATE INDEX CONCURRENTLY` inside an `autocommit_block()` to
+> avoid write-locking a large `events` table. This proved **incompatible with
+> the app's auto-migrate**: `app/main.py` runs Alembic during startup while
+> holding `pg_advisory_lock(727274)` on a connection with an open transaction,
+> and `CREATE INDEX CONCURRENTLY` waits for all concurrent transactions
+> (including that lock holder) to finish — a deadlock that hangs startup. The
+> migration therefore uses **plain `CREATE INDEX IF NOT EXISTS`**. The one-time
+> deploy build takes a `SHARE` lock that briefly blocks writes (ingest INSERTs,
+> which are Celery-queued and simply pause) but never blocks reads. For a very
+> large `events` table, an operator may pre-create these indexes manually with
+> `CONCURRENTLY` before deploying so the migration no-ops.
 
 - `ix_events_received_at` on `events(received_at)` — backs `errors_24h`.
 - `ix_events_project_received_at` on `events(project_id, received_at)` — backs
