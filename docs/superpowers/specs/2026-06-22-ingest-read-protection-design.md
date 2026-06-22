@@ -72,6 +72,15 @@ Add the following indexes via Alembic, idempotent with `if_not_exists`:
 > which are Celery-queued and simply pause) but never blocks reads. For a very
 > large `events` table, an operator may pre-create these indexes manually with
 > `CONCURRENTLY` before deploying so the migration no-ops.
+>
+> **Correction (2026-06-22, hotfix):** plain `CREATE INDEX` across *both* hot
+> tables in Alembic's single migration transaction deadlocked with the
+> concurrent `celery-ingest` writer (migration holds `SHARE` on `events` while
+> requesting `SHARE` on `issues`; an ingest txn holds `RowExclusive` on `issues`
+> while requesting it on `events` → cycle → startup abort). Fix: each
+> `CREATE INDEX` runs in its **own autocommit transaction** (`autocommit_block`),
+> so the migration never holds locks on two tables at once and no cycle can
+> form. See migration `f6a7b8c9d0e1`.
 
 - `ix_events_received_at` on `events(received_at)` — backs `errors_24h`.
 - `ix_events_project_received_at` on `events(project_id, received_at)` — backs
