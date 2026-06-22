@@ -17,6 +17,8 @@ from app.services.pubsub import cache_get_json, cache_set_json
 
 router = APIRouter()
 
+_TRENDS_CACHE_TTL = 60  # seconds; daily buckets move slowly
+
 
 def _dashboard_cache_key(project_ids) -> str:
     """Cache key scoped to the caller's project access (preserves RBAC).
@@ -100,6 +102,11 @@ async def project_trends(
     if not await check_project_access(current_user, project.id, db):
         raise HTTPException(status_code=404, detail="Project not found")
 
+    cache_key = f"stats:trends:{project.id}:{days}"
+    cached = await cache_get_json(cache_key)
+    if cached is not None:
+        return cached
+
     now = datetime.now(timezone.utc)
     start = now - timedelta(days=days)
 
@@ -129,8 +136,10 @@ async def project_trends(
             "count": trend_map.get(day, 0),
         })
 
-    return {
+    payload = {
         "project": slug,
         "days": days,
         "data": data,
     }
+    await cache_set_json(cache_key, payload, _TRENDS_CACHE_TTL)
+    return payload
