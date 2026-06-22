@@ -1,18 +1,36 @@
 """Dashboard stats and trend data endpoints."""
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, get_user_project_ids, check_project_access
 from app.models.project import Project
 from app.models.issue import Issue, IssueStatus
 from app.models.event import Event
 from app.models.user import User
+from app.services.pubsub import cache_get_json, cache_set_json
 
 router = APIRouter()
+
+
+def _dashboard_cache_key(project_ids) -> str:
+    """Cache key scoped to the caller's project access (preserves RBAC).
+
+    Admins (project_ids is None) share one key; scoped users get a key derived
+    from their sorted project ids so two callers with the same scope share a
+    cache entry and no payload leaks across scopes.
+    """
+    if project_ids is None:
+        return "stats:dashboard:all"
+    digest = hashlib.sha1(
+        ",".join(sorted(str(pid) for pid in project_ids)).encode()
+    ).hexdigest()
+    return f"stats:dashboard:{digest}"
 
 
 @router.get("/stats/dashboard")
@@ -21,11 +39,16 @@ async def dashboard_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """Get aggregated dashboard stats. Non-admins see only their assigned projects."""
+    # Get user's project scope (cheap; also forms the cache key)
+    project_ids = await get_user_project_ids(current_user, db)
+
+    cache_key = _dashboard_cache_key(project_ids)
+    cached = await cache_get_json(cache_key)
+    if cached is not None:
+        return cached
+
     now = datetime.now(timezone.utc)
     last_24h = now - timedelta(hours=24)
-
-    # Get user's project scope
-    project_ids = await get_user_project_ids(current_user, db)
 
     # Total projects
     projects_query = select(func.count(Project.id))
@@ -47,15 +70,17 @@ async def dashboard_stats(
 
     # Active users (global count — not scoped)
     active_users = await db.execute(
-        select(func.count(User.id)).where(User.is_active == True)
+        select(func.count(User.id)).where(User.is_active.is_(True))
     )
 
-    return {
+    result = {
         "total_projects": projects_count.scalar() or 0,
         "errors_24h": errors_24h.scalar() or 0,
         "unresolved_issues": unresolved.scalar() or 0,
         "active_users": active_users.scalar() or 0,
     }
+    await cache_set_json(cache_key, result, settings.STATS_CACHE_TTL)
+    return result
 
 
 @router.get("/stats/projects/{slug}/trends")
