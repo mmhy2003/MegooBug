@@ -84,7 +84,7 @@ async def queue_depth(queue: str) -> int:
 
 # ── JSON cache (best-effort, fail-open) ──────────────────────────────
 
-async def cache_get_json(key: str):
+async def cache_get_json(key: str) -> dict | None:
     """Return the cached JSON value for `key`, or None on miss/any error.
 
     Fail-open: a missing pool or a Redis error is treated as a cache miss so
