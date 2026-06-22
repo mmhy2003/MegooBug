@@ -42,6 +42,19 @@ celery_app.conf.task_routes = {
     "ingest_event": {"queue": "ingest"},
 }
 
+
+def _apply_ingest_rate_limit(app, rate_limit):
+    """Cap the per-worker drain rate of ingest_event so storms leave Postgres
+    headroom for reads. Unset = no cap (the queue + INGEST_QUEUE_MAX absorb bursts)."""
+    if rate_limit:
+        app.conf.task_annotations = {
+            "ingest_event": {"rate_limit": rate_limit},
+        }
+    return app
+
+
+_apply_ingest_rate_limit(celery_app, settings.INGEST_RATE_LIMIT)
+
 # Periodic tasks (beat runs embedded in the worker via `-B`)
 celery_app.conf.beat_schedule = {
     "cleanup-old-data-daily": {
