@@ -1,5 +1,4 @@
 """The dashboard read indexes are present in the schema built from the models."""
-import pytest
 from sqlalchemy import text
 
 EXPECTED = {
