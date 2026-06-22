@@ -1,8 +1,6 @@
 """Dashboard stats caching: key derivation, hit short-circuits DB, miss sets cache."""
 import uuid
 
-import pytest
-
 from app.api.v1 import stats
 from app.config import settings
 
