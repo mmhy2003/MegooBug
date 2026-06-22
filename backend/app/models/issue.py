@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 import enum
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Enum, UniqueConstraint, Sequence
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Enum, UniqueConstraint, Sequence, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -29,6 +29,7 @@ class Issue(Base):
     __tablename__ = "issues"
     __table_args__ = (
         UniqueConstraint("fingerprint", "project_id", name="uq_issues_fingerprint_project"),
+        Index("ix_issues_project_status", "project_id", "status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
