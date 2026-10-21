@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCurrentUser } from "@/components/current-user-provider";
 import { NotificationPreferences } from "@/components/profile/notification-preferences";
 import { ApiKeys } from "@/components/profile/api-keys";
+import { AccountForms } from "@/components/profile/account-forms";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Admin",
@@ -118,9 +119,7 @@ function ProfileTabs({ role }: { role: string }) {
         ))}
       </div>
 
-      {activeTab === "account" && (
-        <div className="card">Account settings</div>
-      )}
+      {activeTab === "account" && <AccountForms />}
       {activeTab === "notifications" && <NotificationPreferences />}
       {activeTab === "apikeys" && <ApiKeys />}
     </>
