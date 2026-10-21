@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +14,8 @@ from app.schemas.user import (
     UserResponse,
     UserUpdate,
 )
-from app.services.auth import hash_password, verify_password
+from app.schemas.auth import MessageResponse
+from app.services.auth import hash_password, issue_auth_cookies, verify_password
 
 router = APIRouter()
 
@@ -72,21 +73,35 @@ async def update_me(
     return current_user
 
 
-@router.patch("/me/password", response_model=dict)
+@router.patch("/me/password", response_model=MessageResponse)
 async def update_password(
     data: PasswordUpdate,
+    response: Response,
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """Change current user's password."""
+    """Change current user's password and sign out their other sessions.
+
+    Bumping token_version invalidates every JWT issued so far; the caller
+    gets fresh cookies so this browser stays signed in. API tokens are
+    deliberately unaffected.
+    """
     if not verify_password(data.current_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect",
         )
+    if verify_password(data.new_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from the current password",
+        )
 
     current_user.password_hash = hash_password(data.new_password)
+    current_user.token_version += 1
     await db.flush()
+
+    issue_auth_cookies(response, current_user)
     return {"message": "Password updated"}
 
 
