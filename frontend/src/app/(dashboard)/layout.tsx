@@ -7,14 +7,11 @@ import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
 import { SearchPalette } from "@/components/search-palette";
 import { WebSocketProvider } from "@/components/websocket-provider";
+import {
+  CurrentUserProvider,
+  type CurrentUser,
+} from "@/components/current-user-provider";
 import { api } from "@/lib/api";
-
-interface CurrentUser {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-}
 
 export default function DashboardLayout({
   children,
@@ -78,32 +75,34 @@ export default function DashboardLayout({
   if (!user) return null;
 
   return (
-    <WebSocketProvider>
-      <div className="app-layout scanlines">
-        <Sidebar
-          collapsed={sidebarCollapsed}
-          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-          mobileOpen={mobileOpen}
-          onMobileClose={() => setMobileOpen(false)}
-          userRole={user.role}
-          userName={user.name}
-        />
-
-        <div
-          className={`app-main ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
-        >
-          <Header
-            sidebarCollapsed={sidebarCollapsed}
-            onMobileMenuOpen={() => setMobileOpen(true)}
-            onSearchOpen={() => setSearchOpen(true)}
+    <CurrentUserProvider user={user} onUserChange={setUser}>
+      <WebSocketProvider>
+        <div className="app-layout scanlines">
+          <Sidebar
+            collapsed={sidebarCollapsed}
+            onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+            mobileOpen={mobileOpen}
+            onMobileClose={() => setMobileOpen(false)}
+            userRole={user.role}
             userName={user.name}
           />
-          <main className="app-content">{children}</main>
-        </div>
 
-        {/* Global Search Palette (Ctrl+K / header click) */}
-        <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
-      </div>
-    </WebSocketProvider>
+          <div
+            className={`app-main ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
+          >
+            <Header
+              sidebarCollapsed={sidebarCollapsed}
+              onMobileMenuOpen={() => setMobileOpen(true)}
+              onSearchOpen={() => setSearchOpen(true)}
+              userName={user.name}
+            />
+            <main className="app-content">{children}</main>
+          </div>
+
+          {/* Global Search Palette (Ctrl+K / header click) */}
+          <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
+        </div>
+      </WebSocketProvider>
+    </CurrentUserProvider>
   );
 }

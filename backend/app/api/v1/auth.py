@@ -18,41 +18,14 @@ from app.schemas.auth import (
 )
 from app.schemas.user import UserResponse
 from app.services.auth import (
-    create_access_token,
-    create_refresh_token,
     decode_token,
     hash_password,
+    issue_auth_cookies,
+    token_version_matches,
     verify_password,
 )
 
 router = APIRouter()
-
-
-def _set_auth_cookies(response: Response, access_token: str, refresh_token: str):
-    """Set HTTP-only auth cookies on the response."""
-    # Derive Secure flag from the configured APP_URL scheme — this is more
-    # reliable than checking ENVIRONMENT, which may be "development" even
-    # when the instance is served over HTTPS behind a reverse proxy.
-    is_https = settings.APP_URL.startswith("https://")
-
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        secure=is_https,
-        samesite="lax",
-        max_age=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        path="/",
-    )
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=is_https,
-        samesite="lax",
-        max_age=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-        path="/",  # Must be "/" so Android PWA / mobile browsers always send it
-    )
 
 
 @router.post("/login", response_model=UserResponse)
@@ -77,9 +50,7 @@ async def login(
             detail="Account is disabled",
         )
 
-    access_token = create_access_token(user.id, user.role.value)
-    refresh_token = create_refresh_token(user.id)
-    _set_auth_cookies(response, access_token, refresh_token)
+    issue_auth_cookies(response, user)
 
     return user
 
@@ -119,9 +90,7 @@ async def signup(
     await db.flush()
     await db.refresh(user)
 
-    access_token = create_access_token(user.id, user.role.value)
-    refresh_token = create_refresh_token(user.id)
-    _set_auth_cookies(response, access_token, refresh_token)
+    issue_auth_cookies(response, user)
 
     return user
 
@@ -159,10 +128,15 @@ async def refresh_access_token(
             detail="User not found or inactive",
         )
 
+    # Reject refresh tokens issued before the last password change
+    if not token_version_matches(payload, user):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
     # Rotate tokens
-    new_access = create_access_token(user.id, user.role.value)
-    new_refresh = create_refresh_token(user.id)
-    _set_auth_cookies(response, new_access, new_refresh)
+    issue_auth_cookies(response, user)
 
     return {"message": "Token refreshed"}
 
@@ -223,8 +197,6 @@ async def accept_invite(
     await db.flush()
     await db.refresh(user)
 
-    access_token = create_access_token(user.id, user.role.value)
-    refresh_token = create_refresh_token(user.id)
-    _set_auth_cookies(response, access_token, refresh_token)
+    issue_auth_cookies(response, user)
 
     return user

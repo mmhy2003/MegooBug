@@ -310,8 +310,8 @@ Running `make` (with no arguments) prints all available commands.
 └─────────────────────────────────────────────────┘
 ```
 
-- **Left Sidebar Navbar** — Collapsible (icon-only mode). Contains: logo, Dashboard, Projects, Users (admin only), Settings, user avatar/logout. ✅ Fetches live user from `GET /users/me`; functional logout via `POST /auth/logout`.
-- **Header Bar** — Global search (⌘K), theme toggle (light/dark/system), notification bell with live badge, user avatar initial from live user data.
+- **Left Sidebar Navbar** — Collapsible (icon-only mode). Contains: logo, Dashboard, Projects, Users (admin only), Settings (admin only), user avatar/logout. The avatar + name block links to `/profile`. ✅ Fetches live user from `GET /users/me`; functional logout via `POST /auth/logout`.
+- **Header Bar** — Global search (⌘K), theme toggle (light/dark/system), notification bell with live badge, user avatar initial from live user data (links to `/profile`).
 - **Auth Guard** — Dashboard layout fetches current user on mount; redirects to `/login?redirect=<current_path>` on 401. All dashboard pages are protected.
 - **Login Redirect** — Login page reads `?redirect=` query parameter and navigates to that path after successful authentication (defaults to `/dashboard`). This preserves the user's intended destination across auth flows, including session expiry (API client 401 handler) and direct URL access.
 - **Mobile** — Navbar becomes a hamburger drawer overlay.
@@ -372,19 +372,21 @@ Additional sections:
 
 ### 6.5 Settings (`/settings`) ✅
 
-Tab-based layout with active tab highlighting. **Role-based tab visibility:**
-
-| Role | Visible Tabs |
-|------|--------------|
-| Admin | All tabs (General, Email/SMTP, Profile, API Keys) |
-| Developer | Profile, API Keys |
-| Viewer | Profile only |
+Instance-wide settings, **admin only**. The Settings nav item is hidden for developers and viewers, and opening `/settings` as a non-admin redirects to `/profile`. Personal settings live on the Profile page (§6.5.1).
 
 | Tab | Contents | Status |
 |-----|----------|--------|
-| **General** | Instance name, URL fields, loaded from `GET /settings/general` | ✅ Functional (Admin only) |
-| **Email / SMTP** | SMTP host, port, username, password, from email. Save via `PUT /settings/smtp`, test via `POST /settings/smtp/test` | ✅ Functional (Admin only) |
-| **Profile** | Name + email fields, fetched from `GET /users/me`, saved via `PATCH /users/me` with success/error feedback | ✅ Functional (All roles) |
+| **General** | Instance name, URL fields, loaded from `GET /settings/general` | ✅ Functional |
+| **Email / SMTP** | SMTP host, port, username, password, from email. Save via `PUT /settings/smtp`, test via `POST /settings/smtp/test` | ✅ Functional |
+
+### 6.5.1 Profile (`/profile`) ✅
+
+Reached by clicking the header avatar or the sidebar avatar + name. A summary banner (avatar initial, name, role, email, member since) sits above three tabs. The active tab is in the URL (`?tab=account|notifications|apikeys`); an unknown or role-hidden tab falls back to Account.
+
+| Tab | Contents | Status |
+|-----|----------|--------|
+| **Account** | Personal details: full name (trimmed, required) and email, saved via `PATCH /users/me`; the header and sidebar update immediately. Password: current, new, confirm, via `PATCH /users/me/password`. A password change signs out every other session (JWT `tv` claim vs `users.token_version`); the current browser gets fresh cookies. API tokens keep working. | ✅ Functional (All roles) |
+| **Notifications** | In-app / email toggles per event type (new issue, regression, project assignment), auto-saved via `PUT /users/me/notification-preferences` | ✅ Functional (All roles) |
 | **API Keys** | Table: name, token prefix (`mgb_...••••`), last used, created, expires, revoke button. **Create Token** modal with name + optional expiry. Raw token shown **once** with copy button + security warning. | ✅ Functional (Admin + Developer) |
 
 ---
@@ -513,7 +515,7 @@ All `/api/0/` endpoints authenticate via **Bearer token** in the `Authorization`
 Authorization: Bearer <api_token>
 ```
 
-Tokens are scoped API keys created per-user in **Settings → API Keys**. Each token carries the same role permissions as its owner.
+Tokens are scoped API keys created per-user in **Profile → API Keys**. Each token carries the same role permissions as its owner.
 
 #### Compatibility Endpoints
 
@@ -601,9 +603,9 @@ api_tokens
 
 #### Token Lifecycle
 
-1. **Create** — User navigates to **Settings → API Keys** → "Create Token". Enters a name, optional expiry. System generates a random token (`mgb_<32-char-hex>`), displays it **once**, stores only the hash.
+1. **Create** — User navigates to **Profile → API Keys** → "Create Token". Enters a name, optional expiry. System generates a random token (`mgb_<32-char-hex>`), displays it **once**, stores only the hash.
 2. **Use** — Token is sent as `Bearer <token>` on `/api/0/` requests. Backend hashes the incoming token and looks up by `token_prefix` + hash comparison.
-3. **Revoke** — User deletes the token from Settings. Immediate invalidation.
+3. **Revoke** — User deletes the token from Profile → API Keys. Immediate invalidation.
 4. **Expiry** — If `expires_at` is set and passed, the token is rejected.
 
 #### Token Format
@@ -850,9 +852,9 @@ api_tokens
 
 **Expanded state:**
 - Logo + app name
-- Nav items with icon + label: Dashboard, Projects, Users*, Settings
+- Nav items with icon + label: Dashboard, Projects, Users*, Settings*
 - Theme toggle (sun/moon/monitor icons)
-- User avatar + name + logout
+- User avatar + name (links to `/profile`) + logout
 
 **Collapsed state:**
 - Logo icon only

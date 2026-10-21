@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Search, Menu } from "lucide-react";
 import { NotificationBell } from "@/components/notification-bell";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -16,6 +18,9 @@ export function Header({
   onSearchOpen,
   userName = "Admin",
 }: HeaderProps) {
+  const pathname = usePathname();
+  const onProfile = pathname.startsWith("/profile");
+
   return (
     <header
       className={`header ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
@@ -55,10 +60,16 @@ export function Header({
         {/* Notifications */}
         <NotificationBell />
 
-        {/* User avatar */}
-        <div className="user-avatar" title={userName}>
+        {/* User avatar → profile */}
+        <Link
+          href="/profile"
+          className={`user-avatar ${onProfile ? "active" : ""}`}
+          aria-label="Your profile"
+          title="Your profile"
+          aria-current={onProfile ? "page" : undefined}
+        >
           {userName.charAt(0).toUpperCase()}
-        </div>
+        </Link>
       </div>
     </header>
   );

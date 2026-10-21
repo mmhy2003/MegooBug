@@ -29,7 +29,7 @@ const navItems: NavItem[] = [
   { label: "Projects", href: "/projects", icon: FolderKanban },
   { label: "Teams", href: "/teams", icon: UsersRound },
   { label: "Users", href: "/users", icon: Users, adminOnly: true },
-  { label: "Settings", href: "/settings", icon: Settings },
+  { label: "Settings", href: "/settings", icon: Settings, adminOnly: true },
 ];
 
 interface SidebarProps {
@@ -60,6 +60,8 @@ export function Sidebar({
   ]
     .filter(Boolean)
     .join(" ");
+
+  const onProfile = pathname.startsWith("/profile");
 
   const visibleItems = navItems.filter(
     (item) => !item.adminOnly || userRole === "admin"
@@ -131,40 +133,49 @@ export function Sidebar({
               padding: "0.5rem 0.25rem",
             }}
           >
-            <div className="user-avatar">
-              {userName.charAt(0).toUpperCase()}
-            </div>
-            {!collapsed && (
-              <div
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: "0.8125rem",
-                    fontWeight: 600,
-                    color: "var(--text-primary)",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {userName}
-                </div>
-                <div
-                  style={{
-                    fontSize: "0.6875rem",
-                    color: "var(--text-tertiary)",
-                    textTransform: "capitalize",
-                  }}
-                >
-                  {userRole}
-                </div>
+            <Link
+              href="/profile"
+              className={`sidebar-user-link ${onProfile ? "active" : ""}`}
+              title={collapsed ? "Your profile" : undefined}
+              aria-label={collapsed ? "Your profile" : undefined}
+              aria-current={onProfile ? "page" : undefined}
+              onClick={onMobileClose}
+            >
+              <div className="user-avatar">
+                {userName.charAt(0).toUpperCase()}
               </div>
-            )}
+              {!collapsed && (
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "0.8125rem",
+                      fontWeight: 600,
+                      color: "var(--text-primary)",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {userName}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.6875rem",
+                      color: "var(--text-tertiary)",
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {userRole}
+                  </div>
+                </div>
+              )}
+            </Link>
             {!collapsed && (
               <button
                 style={{
