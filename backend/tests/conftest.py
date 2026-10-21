@@ -113,3 +113,40 @@ def cookie_header(access: str | None = None, refresh: str | None = None) -> dict
     if refresh is not None:
         parts.append(f"refresh_token={refresh}")
     return {"Cookie": "; ".join(parts)}
+
+
+@pytest.fixture
+async def committed_client(db_engine):
+    """Client whose get_db commits per request like production (rollback on error).
+
+    Yields (client, session_factory). Use it where persistence or concurrency
+    matters; users created through the factory are deleted afterwards.
+    """
+    from httpx import ASGITransport, AsyncClient
+    from sqlalchemy import delete
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from app.database import get_db
+    from app.main import app
+    from app.models.user import User
+
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+
+    async def _get_db():
+        async with factory() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    app.dependency_overrides[get_db] = _get_db
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client, factory
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        async with factory() as session:
+            await session.execute(delete(User).where(User.email.like("committed-%@example.com")))
+            await session.commit()

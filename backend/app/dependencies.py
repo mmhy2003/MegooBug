@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.api_token import ApiToken
-from app.services.auth import decode_token, token_version_matches
+from app.services.auth import MFA_PENDING_COOKIE, decode_token, token_version_matches
 from app.services.token import verify_api_token, is_token_expired
 from app.logging import get_logger
 
@@ -115,6 +115,43 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+MFA_PENDING_EXPIRED = "Your sign-in expired. Enter your password again."
+
+
+async def get_mfa_pending_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """The user behind a valid "password ok, second step pending" cookie.
+
+    Errors are 400, not 401: the frontend treats 401 as an expired session
+    and redirects, which would break the login screen.
+    """
+    expired = HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=MFA_PENDING_EXPIRED)
+    token = request.cookies.get(MFA_PENDING_COOKIE)
+    payload = decode_token(token) if token else None
+    if payload is None or payload.get("type") != "mfa_pending" or not payload.get("sub"):
+        raise expired
+
+    # Row lock: second-step requests for one user run one at a time, so
+    # attempt counters and TOTP replay checks can't be raced (lost updates).
+    result = await db.execute(
+        select(User).where(User.id == uuid.UUID(payload["sub"])).with_for_update()
+    )
+    user = result.scalar_one_or_none()
+    if (
+        user is None
+        or not user.is_active
+        or not token_version_matches(payload, user)
+        or user.mfa_pending_jti is None
+        or payload.get("jti") != user.mfa_pending_jti
+    ):
+        raise expired
+    return user
+
+
+MfaPendingUser = Annotated[User, Depends(get_mfa_pending_user)]
 
 
 def require_role(*roles: UserRole):

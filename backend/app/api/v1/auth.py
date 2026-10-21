@@ -14,6 +14,7 @@ from app.schemas.auth import (
     InviteAcceptRequest,
     LoginRequest,
     MessageResponse,
+    MfaChallengeResponse,
     SignupRequest,
 )
 from app.schemas.user import UserResponse
@@ -21,6 +22,7 @@ from app.services.auth import (
     decode_token,
     hash_password,
     issue_auth_cookies,
+    issue_mfa_pending_cookie,
     token_version_matches,
     verify_password,
 )
@@ -28,13 +30,17 @@ from app.services.auth import (
 router = APIRouter()
 
 
-@router.post("/login", response_model=UserResponse)
+@router.post("/login", response_model=UserResponse | MfaChallengeResponse)
 async def login(
     data: LoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Authenticate user and set JWT cookies."""
+    """Check the password; then either sign in, or start the second step.
+
+    A user with 2FA (or one an admin requires to have it) gets only a
+    short-lived pending cookie here; session cookies come after /auth/2fa/*.
+    """
     result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
 
@@ -48,6 +54,14 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled",
+        )
+
+    if user.mfa_enrolled or user.mfa_required:
+        issue_mfa_pending_cookie(response, user)
+        return MfaChallengeResponse(
+            mfa_required="verify" if user.mfa_enrolled else "setup",
+            methods=user.mfa_methods,
+            email=user.email,
         )
 
     issue_auth_cookies(response, user)

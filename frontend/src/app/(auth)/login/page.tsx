@@ -7,6 +7,8 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { api, ApiError } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LoginSecondStep } from "@/components/auth/login-second-step";
+import { isMfaChallenge, type MfaChallenge } from "@/lib/two-factor";
 
 function LoginForm() {
   const router = useRouter();
@@ -17,6 +19,8 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // Set when the password was right but a second step (or 2FA setup) is needed
+  const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -24,7 +28,11 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      await api.post("/api/v1/auth/login", { email, password });
+      const result = await api.post<unknown>("/api/v1/auth/login", { email, password });
+      if (isMfaChallenge(result)) {
+        setChallenge(result);
+        return;
+      }
       router.push(redirectTo);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -38,6 +46,20 @@ function LoginForm() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (challenge) {
+    return (
+      <LoginSecondStep
+        challenge={challenge}
+        onSuccess={() => router.push(redirectTo)}
+        onRestart={(message) => {
+          setChallenge(null);
+          setPassword("");
+          setError(message ?? "");
+        }}
+      />
+    );
   }
 
   return (

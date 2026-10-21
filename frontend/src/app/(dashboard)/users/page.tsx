@@ -21,6 +21,9 @@ import {
 import { api, ApiError } from "@/lib/api";
 import { InviteUserModal } from "@/components/invite-user-modal";
 import { ManageProjectsModal } from "@/components/manage-projects-modal";
+import { useCurrentUser } from "@/components/current-user-provider";
+import { TwoFactorBadge, User2faMenu } from "@/components/two-factor/user-2fa-menu";
+import type { MfaMethod } from "@/lib/two-factor";
 
 interface UserItem {
   id: string;
@@ -29,6 +32,8 @@ interface UserItem {
   role: string;
   is_active: boolean;
   created_at: string;
+  mfa_required: boolean;
+  mfa_methods: MfaMethod[];
 }
 
 interface InviteItem {
@@ -51,6 +56,7 @@ interface InviteListResponse {
 }
 
 export default function UsersPage() {
+  const { user: currentUser } = useCurrentUser();
   const [users, setUsers] = useState<UserItem[]>([]);
   const [invites, setInvites] = useState<InviteItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -323,6 +329,7 @@ export default function UsersPage() {
                 <th>User</th>
                 <th>Email</th>
                 <th>Role</th>
+                <th>2FA</th>
                 <th>Status</th>
                 <th>Joined</th>
                 <th>Actions</th>
@@ -398,6 +405,9 @@ export default function UsersPage() {
                       </select>
                     </td>
                     <td>
+                      <TwoFactorBadge user={user} />
+                    </td>
+                    <td>
                       <span className={user.is_active ? "badge badge-success" : "badge badge-warning"}>
                         {user.is_active ? "active" : "disabled"}
                       </span>
@@ -405,6 +415,14 @@ export default function UsersPage() {
                     <td className="text-muted">{formatDate(user.created_at)}</td>
                     <td>
                       <div style={{ display: "flex", gap: "0.5rem" }}>
+                        {user.id !== currentUser.id && (
+                          <User2faMenu
+                            user={user}
+                            onUpdated={(updated) =>
+                              setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
+                            }
+                          />
+                        )}
                         <button
                           className="btn btn-ghost"
                           style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
@@ -482,6 +500,7 @@ export default function UsersPage() {
                       {invite.role}
                     </span>
                   </td>
+                  <td className="text-muted">—</td>
                   <td>
                     <span className="badge badge-invited">
                       <Mail size={10} />
@@ -576,6 +595,7 @@ export default function UsersPage() {
                       {invite.role}
                     </span>
                   </td>
+                  <td className="text-muted">—</td>
                   <td>
                     <span className="badge badge-expired">
                       expired

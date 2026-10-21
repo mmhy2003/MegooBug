@@ -283,6 +283,7 @@ make logs-fe      Tail frontend logs
 make migrate      Run Alembic migrations
 make seed         Seed admin user
 make reindex      Full Meilisearch re-index
+make reset-2fa email=...  Reset a user's 2FA (last resort)
 make test         Run all tests
 make lint         Lint backend + frontend
 make shell-be     Shell into backend container

@@ -8,6 +8,8 @@ export interface CurrentUser {
   email: string;
   role: "admin" | "developer" | "viewer";
   created_at: string;
+  mfa_required: boolean;
+  mfa_methods: ("passkey" | "totp")[];
 }
 
 interface CurrentUserContextValue {

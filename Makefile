@@ -1,4 +1,4 @@
-.PHONY: help dev prod down logs migrate seed test lint clean shell-be shell-fe reindex
+.PHONY: help dev prod down logs migrate seed test lint clean shell-be shell-fe reindex reset-2fa
 
 .DEFAULT_GOAL := help
 
@@ -22,6 +22,7 @@ help:
 	@echo "    make migrate      Run Alembic migrations"
 	@echo "    make migration    Create new migration (msg=\"description\")"
 	@echo "    make seed         Seed admin user"
+	@echo "    make reset-2fa email=...  Reset a user's 2FA (COMPOSE_FILE=docker-compose.yml for prod)"
 	@echo ""
 	@echo "  Search:"
 	@echo "    make reindex      Full Meilisearch re-index"
@@ -72,6 +73,11 @@ migration:
 
 seed:
 	docker compose -f docker-compose.dev.yml exec backend python -m app.scripts.seed
+
+# Last-resort 2FA reset (e.g. the only admin lost their devices)
+COMPOSE_FILE ?= docker-compose.dev.yml
+reset-2fa:
+	docker compose -f $(COMPOSE_FILE) exec backend python -m app.scripts.reset_2fa "$(email)"
 
 # ── Search ──
 reindex:

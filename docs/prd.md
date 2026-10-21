@@ -241,6 +241,7 @@ Running `make` (with no arguments) prints all available commands.
 | `make migration` | Create new Alembic migration (`msg="description"`) |
 | `make seed` | Seed admin user (backup — auto-seed handles this) |
 | `make reindex` | Full Meilisearch re-index |
+| `make reset-2fa email=…` | Remove a user's 2FA methods and sign them out (last resort when no admin can). Add `COMPOSE_FILE=docker-compose.yml` for production. |
 | `make test` | Run backend + frontend tests |
 | `make test-be` | Run backend tests only |
 | `make test-fe` | Run frontend tests only |
@@ -264,6 +265,7 @@ Running `make` (with no arguments) prints all available commands.
 | Invite | Admins generate invite links (token-based, expirable) |
 | Password | bcrypt hashed, min 8 chars |
 | Sessions | Refresh token rotation, configurable TTL |
+| Two-factor (2FA) | Optional TOTP (authenticator app) and/or passkeys (WebAuthn), as a second step after the password. Admins can require it per user. See §6.5.2. |
 
 ### 5.2 Roles & Permissions
 
@@ -362,8 +364,9 @@ Additional sections:
 ### 6.4 Users (`/users`) — Admin Only ✅
 
 - **Role Permissions Guide** — Displayed before the users list as a documentation section. Explains the access rights for each role (Admin, Developer, Viewer) so the admin can make informed role assignments. Covers: dashboard access, issue management, project CRUD, user management, settings access, and API key management.
-- Table: avatar initial, name, email, role badge, status badge (active/disabled), joined date.
+- Table: avatar initial, name, email, role badge, **2FA badge** (On · Passkey / On · App / On · App + Passkey / Off / Required · not set up), status badge (active/disabled), joined date.
 - Actions per user row:
+  - **2FA ▾** menu (not on your own row) — **Require 2FA** toggle (`PATCH /users/{id}/2fa-required`; requiring it of a user with no method signs them out so they set it up at next sign-in) and **Reset 2FA…** with confirmation (`POST /users/{id}/2fa/reset`; removes all their passkeys and app secret and signs them out).
   - **Projects** button — Opens "Manage Projects" modal showing assigned projects (with remove) and available projects (with assign). Uses `POST /projects/{slug}/members` and `DELETE /projects/{slug}/members/{uid}`.
   - **Disable/Enable** toggle — Toggle user active status.
 - Role dropdown: inline role change (admin / developer / viewer).
@@ -381,13 +384,22 @@ Instance-wide settings, **admin only**. The Settings nav item is hidden for deve
 
 ### 6.5.1 Profile (`/profile`) ✅
 
-Reached by clicking the header avatar or the sidebar avatar + name. A summary banner (avatar initial, name, role, email, member since) sits above three tabs. The active tab is in the URL (`?tab=account|notifications|apikeys`); an unknown or role-hidden tab falls back to Account.
+Reached by clicking the header avatar or the sidebar avatar + name. A summary banner (avatar initial, name, role, email, member since) sits above four tabs. The active tab is in the URL (`?tab=account|security|notifications|apikeys`); an unknown or role-hidden tab falls back to Account.
 
 | Tab | Contents | Status |
 |-----|----------|--------|
 | **Account** | Personal details: full name (trimmed, required) and email, saved via `PATCH /users/me`; the header and sidebar update immediately. Password: current, new, confirm, via `PATCH /users/me/password`. A password change signs out every other session (JWT `tv` claim vs `users.token_version`); the current browser gets fresh cookies. API tokens keep working. | ✅ Functional (All roles) |
+| **Security** | Two-factor authentication (§6.5.2): status (On/Off, "Required by admin"), passkeys (add, rename, remove) and the authenticator app (set up, replace, remove). Adding, replacing or removing a method asks for the current password. | ✅ Functional (All roles) |
 | **Notifications** | In-app / email toggles per event type (new issue, regression, project assignment), auto-saved via `PUT /users/me/notification-preferences` | ✅ Functional (All roles) |
 | **API Keys** | Table: name, token prefix (`mgb_...••••`), last used, created, expires, revoke button. **Create Token** modal with name + optional expiry. Raw token shown **once** with copy button + security warning. | ✅ Functional (Admin + Developer) |
+
+### 6.5.2 Two-factor authentication ✅
+
+- **Methods:** TOTP (RFC 6238, 6 digits, 30 s, ±1 step, codes can't be reused; secret Fernet-encrypted at rest) and passkeys (WebAuthn; RP ID = host of `APP_URL`). A user can have one authenticator app and any number of passkeys.
+- **Login:** a correct password for a user with 2FA (or one required to have it) issues only a 5-minute `mfa_pending` cookie (`path=/api/v1/auth`). With both methods the user chooses; with one they go straight to it. Session cookies are issued after `POST /auth/2fa/totp` or `POST /auth/2fa/passkey`. A required user with no method sets one up during login (`/auth/2fa/setup/*`).
+- **Limits:** 5 wrong attempts invalidate the pending sign-in; after 5 consecutive failures on an account each further attempt waits 30 s, 1 min, 2 min… up to 15 min ("Too many attempts, try again in …"). No hard lock.
+- **Recovery:** an admin resets the user's 2FA from the Users page; if no admin can, the server operator runs `make reset-2fa email=…`. There are no backup codes.
+- **Not covered:** API tokens (`mgb_…`) are unaffected by 2FA.
 
 ---
 
@@ -720,6 +732,9 @@ api_tokens
 | POST | `/api/v1/auth/refresh` | Refresh access token |
 | POST | `/api/v1/auth/logout` | Invalidate refresh token |
 | POST | `/api/v1/auth/accept-invite` | Register via invite token |
+| POST | `/api/v1/auth/2fa/totp` | Second step: authenticator code |
+| POST | `/api/v1/auth/2fa/passkey/options` · `/api/v1/auth/2fa/passkey` | Second step: passkey |
+| POST | `/api/v1/auth/2fa/setup/*` | Forced 2FA setup during login |
 
 ### Users
 | Method | Path | Description |
@@ -728,6 +743,12 @@ api_tokens
 | GET | `/api/v1/users/me` | Current user profile |
 | PATCH | `/api/v1/users/me` | Update profile |
 | PATCH | `/api/v1/users/me/password` | Change password |
+| GET | `/api/v1/users/me/2fa` | 2FA status, methods and passkeys |
+| POST | `/api/v1/users/me/2fa/totp` · `/totp/confirm` · `/totp/remove` | Set up / replace / remove the authenticator app (password required) |
+| POST | `/api/v1/users/me/2fa/passkeys/options` · `/passkeys` | Add a passkey (password required) |
+| PATCH / POST | `/api/v1/users/me/2fa/passkeys/{id}` · `/{id}/remove` | Rename / remove a passkey (remove requires password) |
+| PATCH | `/api/v1/users/{id}/2fa-required` | Require 2FA for a user (admin) |
+| POST | `/api/v1/users/{id}/2fa/reset` | Reset a user's 2FA (admin) |
 | PATCH | `/api/v1/users/{id}/role` | Change role (admin) |
 | PATCH | `/api/v1/users/{id}/status` | Enable/disable user (admin) |
 | DELETE | `/api/v1/users/{id}` | Remove user (admin) |
