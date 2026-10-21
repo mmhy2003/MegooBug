@@ -434,6 +434,89 @@ code, pre {
   color: var(--text-secondary);
 }
 
+/* ── Two-factor login step ── */
+.auth-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.auth-choice:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+}
+
+.auth-choice:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.auth-choice-icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--accent-primary-rgb), 0.1);
+  color: var(--accent-primary);
+}
+
+.auth-choice-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  font-size: 0.8125rem;
+}
+
+.auth-choice-text strong {
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+}
+
+.auth-step-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 0.875rem;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--accent-primary-rgb), 0.1);
+  color: var(--accent-primary);
+}
+
+.auth-step-icon.warning {
+  background: color-mix(in srgb, var(--accent-warning) 12%, transparent);
+  color: var(--accent-warning);
+}
+
+.auth-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--accent-primary);
+  cursor: pointer;
+}
+
+.auth-link-btn:hover {
+  text-decoration: underline;
+}
+
 .auth-error {
   padding: 0.75rem 1rem;
   background: rgba(255, 41, 91, 0.1);
