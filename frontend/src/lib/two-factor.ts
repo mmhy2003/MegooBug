@@ -7,14 +7,7 @@ import {
 import { api } from "@/lib/api";
 import type { CurrentUser } from "@/components/current-user-provider";
 
-export type MfaMethod = "passkey" | "totp";
-
-/** Login accepted the password; a second step (or forced setup) comes next. */
-export interface MfaChallenge {
-  mfa_required: "verify" | "setup";
-  methods: MfaMethod[];
-  email: string;
-}
+export { isMfaChallenge, type MfaChallenge, type MfaMethod } from "@/lib/mfa-challenge";
 
 export interface TotpSetup {
   secret: string;
@@ -23,10 +16,6 @@ export interface TotpSetup {
 
 /** Shown by the backend when the pending sign-in is gone; restart at the password. */
 export const SIGN_IN_EXPIRED = "Your sign-in expired. Enter your password again.";
-
-export function isMfaChallenge(x: unknown): x is MfaChallenge {
-  return typeof x === "object" && x !== null && "mfa_required" in x;
-}
 
 export function verifyLoginTotp(code: string): Promise<CurrentUser> {
   return api.post<CurrentUser>("/api/v1/auth/2fa/totp", { code });
