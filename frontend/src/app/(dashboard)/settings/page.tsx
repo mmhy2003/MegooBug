@@ -1,46 +1,20 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
-import {
-  Key, X, Copy, Check, AlertTriangle, Loader2, Plus, Trash2,
-  BellRing, Bug, RefreshCw, UserCheck,
-} from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useCurrentUser } from "@/components/current-user-provider";
+import { api } from "@/lib/api";
 
-interface UserProfile {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-}
-
-interface ApiToken {
-  id: string;
-  name: string;
-  token_prefix: string;
-  scopes: Record<string, unknown> | null;
-  last_used_at: string | null;
-  expires_at: string | null;
-  created_at: string;
-}
-
-interface CreatedToken extends ApiToken {
-  raw_token: string;
-}
-
+// Instance-wide settings (admin only). Personal settings live on /profile.
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState("profile");
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const router = useRouter();
+  const { user } = useCurrentUser();
+  const isAdmin = user.role === "admin";
+  const [activeTab, setActiveTab] = useState("general");
 
   // General settings
   const [instanceName, setInstanceName] = useState("MegooBug");
   const [instanceUrl, setInstanceUrl] = useState("");
-
-  // Profile
-  const [profileName, setProfileName] = useState("");
-  const [profileEmail, setProfileEmail] = useState("");
-  const [profileSaving, setProfileSaving] = useState(false);
-  const [profileMsg, setProfileMsg] = useState("");
 
   // SMTP
   const [smtpHost, setSmtpHost] = useState("");
@@ -51,73 +25,11 @@ export default function SettingsPage() {
   const [smtpSaving, setSmtpSaving] = useState(false);
   const [smtpMsg, setSmtpMsg] = useState("");
 
-  // API Tokens
-  const [tokens, setTokens] = useState<ApiToken[]>([]);
-  const [tokensLoading, setTokensLoading] = useState(false);
-  const [showCreateToken, setShowCreateToken] = useState(false);
-  const [tokenName, setTokenName] = useState("");
-  const [tokenExpiry, setTokenExpiry] = useState("");
-  const [tokenCreating, setTokenCreating] = useState(false);
-  const [createdToken, setCreatedToken] = useState<CreatedToken | null>(null);
-  const [tokenCopied, setTokenCopied] = useState(false);
-  const [tokenError, setTokenError] = useState("");
-
-  // Notification Preferences
-  interface NotifPref {
-    inapp: boolean;
-    email: boolean;
-  }
-  interface NotifPreferences {
-    new_issue: NotifPref;
-    regression: NotifPref;
-    assigned: NotifPref;
-  }
-  const defaultPrefs: NotifPreferences = {
-    new_issue: { inapp: true, email: true },
-    regression: { inapp: true, email: true },
-    assigned: { inapp: true, email: true },
-  };
-  const [notifPrefs, setNotifPrefs] = useState<NotifPreferences>(defaultPrefs);
-  const [notifLoading, setNotifLoading] = useState(false);
-  const [notifSaving, setNotifSaving] = useState(false);
-  const [notifMsg, setNotifMsg] = useState("");
-
   useEffect(() => {
-    loadProfile();
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === "apikeys") {
-      loadTokens();
+    if (!isAdmin) {
+      router.replace("/profile");
     }
-    if (activeTab === "smtp") {
-      loadSmtp();
-    }
-    if (activeTab === "general") {
-      loadGeneral();
-    }
-    if (activeTab === "notifications") {
-      loadNotifPrefs();
-    }
-  }, [activeTab]);
-
-  async function loadProfile() {
-    try {
-      const user = await api.get<UserProfile>("/api/v1/users/me");
-      setProfile(user);
-      setProfileName(user.name);
-      setProfileEmail(user.email);
-    } catch {}
-  }
-
-  async function loadTokens() {
-    setTokensLoading(true);
-    try {
-      const data = await api.get<ApiToken[]>("/api/v1/api-tokens");
-      setTokens(data);
-    } catch {}
-    setTokensLoading(false);
-  }
+  }, [isAdmin, router]);
 
   async function loadSmtp() {
     try {
@@ -188,121 +100,24 @@ export default function SettingsPage() {
     } catch {}
   }
 
-  async function loadNotifPrefs() {
-    setNotifLoading(true);
-    try {
-      const data = await api.get<{ preferences: NotifPreferences }>(
-        "/api/v1/users/me/notification-preferences"
-      );
-      if (data.preferences) {
-        setNotifPrefs({ ...defaultPrefs, ...data.preferences });
-      }
-    } catch {}
-    setNotifLoading(false);
-  }
 
-  async function handleTogglePref(
-    key: keyof NotifPreferences,
-    channel: "inapp" | "email"
-  ) {
-    const newPrefs = { ...notifPrefs };
-    newPrefs[key] = { ...newPrefs[key], [channel]: !newPrefs[key][channel] };
-    setNotifPrefs(newPrefs);
-    setNotifSaving(true);
-    setNotifMsg("");
-    try {
-      await api.put("/api/v1/users/me/notification-preferences", {
-        preferences: newPrefs,
-      });
-      setNotifMsg("Preferences saved");
-      setTimeout(() => setNotifMsg(""), 2000);
-    } catch {
-      // Revert on failure
-      setNotifPrefs(notifPrefs);
-      setNotifMsg("Failed to save preferences");
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (activeTab === "smtp") {
+      loadSmtp();
     }
-    setNotifSaving(false);
-  }
-
-  async function handleProfileSave(e: FormEvent) {
-    e.preventDefault();
-    setProfileSaving(true);
-    setProfileMsg("");
-    try {
-      await api.patch("/api/v1/users/me", {
-        name: profileName,
-        email: profileEmail,
-      });
-      setProfileMsg("Profile updated successfully");
-    } catch (err) {
-      if (err instanceof ApiError) setProfileMsg(err.message);
+    if (activeTab === "general") {
+      loadGeneral();
     }
-    setProfileSaving(false);
-  }
+  }, [activeTab, isAdmin]);
 
-  async function handleCreateToken(e: FormEvent) {
-    e.preventDefault();
-    setTokenCreating(true);
-    setTokenError("");
-    try {
-      const result = await api.post<CreatedToken>("/api/v1/api-tokens", {
-        name: tokenName,
-        expires_in_days: tokenExpiry ? parseInt(tokenExpiry) : null,
-      });
-      setCreatedToken(result);
-      setTokenName("");
-      setTokenExpiry("");
-      loadTokens();
-    } catch (err) {
-      if (err instanceof ApiError) setTokenError(err.message);
-      else setTokenError("Failed to create token");
-    }
-    setTokenCreating(false);
-  }
-
-  async function handleRevokeToken(tokenId: string) {
-    try {
-      await api.delete(`/api/v1/api-tokens/${tokenId}`);
-      setTokens((prev) => prev.filter((t) => t.id !== tokenId));
-    } catch {}
-  }
-
-  async function copyToken() {
-    if (!createdToken) return;
-    try {
-      await navigator.clipboard.writeText(createdToken.raw_token);
-      setTokenCopied(true);
-      setTimeout(() => setTokenCopied(false), 2000);
-    } catch {}
-  }
-
-  function formatDate(iso: string | null) {
-    if (!iso) return "—";
-    return new Date(iso).toLocaleDateString();
-  }
-
-  const allTabs = [
-    { key: "general", label: "General", roles: ["admin"] },
-    { key: "smtp", label: "Email / SMTP", roles: ["admin"] },
-    { key: "profile", label: "Profile", roles: ["admin", "developer", "viewer"] },
-    { key: "notifications", label: "Notifications", roles: ["admin", "developer", "viewer"] },
-    { key: "apikeys", label: "API Keys", roles: ["admin", "developer"] },
+  const tabs = [
+    { key: "general", label: "General" },
+    { key: "smtp", label: "Email / SMTP" },
   ];
 
-  const userRole = profile?.role || "viewer";
-  const visibleTabs = allTabs.filter((tab) => tab.roles.includes(userRole));
-
-  // If active tab is not visible for this role, switch to the first visible tab
-  const resolvedTab = visibleTabs.find((t) => t.key === activeTab)
-    ? activeTab
-    : visibleTabs[0]?.key || "profile";
-
-  // Sync state if the resolved tab differs (e.g. after profile loads)
-  useEffect(() => {
-    if (resolvedTab !== activeTab) {
-      setActiveTab(resolvedTab);
-    }
-  }, [resolvedTab, activeTab]);
+  // Non-admins are being redirected to /profile
+  if (!isAdmin) return null;
 
   return (
     <div>
@@ -311,10 +126,10 @@ export default function SettingsPage() {
       </div>
 
       <div className="tabs">
-        {visibleTabs.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.key}
-            className={`tab ${resolvedTab === tab.key ? "active" : ""}`}
+            className={`tab ${activeTab === tab.key ? "active" : ""}`}
             onClick={() => setActiveTab(tab.key)}
           >
             {tab.label}
@@ -486,454 +301,6 @@ export default function SettingsPage() {
                 </span>
               )}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Profile ── */}
-      {activeTab === "profile" && (
-        <div className="card">
-          <h2 style={{ fontSize: "1.125rem", marginBottom: "1rem" }}>Profile</h2>
-          <form onSubmit={handleProfileSave}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-                gap: "1rem",
-              }}
-            >
-              <div className="form-group">
-                <label htmlFor="profile-name" className="label">Name</label>
-                <input
-                  id="profile-name"
-                  className="input"
-                  value={profileName}
-                  onChange={(e) => setProfileName(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="profile-email" className="label">Email</label>
-                <input
-                  id="profile-email"
-                  className="input"
-                  value={profileEmail}
-                  onChange={(e) => setProfileEmail(e.target.value)}
-                />
-              </div>
-            </div>
-            {profileMsg && (
-              <p
-                style={{
-                  marginTop: "0.75rem",
-                  fontSize: "0.8125rem",
-                  color: profileMsg.includes("success")
-                    ? "var(--accent-success)"
-                    : "var(--accent-error)",
-                }}
-              >
-                {profileMsg}
-              </p>
-            )}
-            <div style={{ marginTop: "1rem" }}>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={profileSaving}
-              >
-                {profileSaving ? "Saving..." : "Update Profile"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* ── Notifications ── */}
-      {activeTab === "notifications" && (
-        <div className="card">
-          <div style={{ marginBottom: "1.5rem" }}>
-            <h2 style={{ fontSize: "1.125rem", marginBottom: "0.25rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <BellRing size={20} style={{ color: "var(--accent-primary)" }} />
-              Notification Preferences
-            </h2>
-            <p className="text-muted" style={{ fontSize: "0.8125rem" }}>
-              Control which notifications you receive. Changes are saved automatically.
-            </p>
-          </div>
-
-          {notifLoading ? (
-            <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
-              <Loader2 size={24} className="spin" style={{ color: "var(--text-tertiary)" }} />
-            </div>
-          ) : (
-            <div>
-              {/* Header row */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 100px 100px",
-                  gap: "1rem",
-                  padding: "0.75rem 1rem",
-                  borderBottom: "1px solid var(--border-color)",
-                  fontSize: "0.6875rem",
-                  fontWeight: 600,
-                  color: "var(--text-tertiary)",
-                  textTransform: "uppercase" as const,
-                  letterSpacing: "0.05em",
-                }}
-              >
-                <span>Event Type</span>
-                <span style={{ textAlign: "center" }}>In-App</span>
-                <span style={{ textAlign: "center" }}>Email</span>
-              </div>
-
-              {/* Notification rows */}
-              {([
-                {
-                  key: "new_issue" as const,
-                  label: "New Issues",
-                  description: "When a new error or issue is first detected in your projects",
-                  icon: <Bug size={18} />,
-                  color: "var(--accent-error)",
-                },
-                {
-                  key: "regression" as const,
-                  label: "Regressions",
-                  description: "When a previously resolved issue reappears with new events",
-                  icon: <RefreshCw size={18} />,
-                  color: "var(--accent-warning)",
-                },
-                {
-                  key: "assigned" as const,
-                  label: "Project Assignment",
-                  description: "When you are added to a project by an admin",
-                  icon: <UserCheck size={18} />,
-                  color: "var(--accent-primary)",
-                },
-              ]).map((item) => (
-                <div
-                  key={item.key}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 100px 100px",
-                    gap: "1rem",
-                    padding: "1rem",
-                    borderBottom: "1px solid var(--border-color)",
-                    alignItems: "center",
-                    transition: "background 150ms",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 36,
-                        height: 36,
-                        borderRadius: "var(--radius-sm)",
-                        background: `color-mix(in srgb, ${item.color} 12%, transparent)`,
-                        color: item.color,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {item.icon}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text-primary)" }}>
-                        {item.label}
-                      </div>
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginTop: "0.125rem" }}>
-                        {item.description}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* In-App Toggle */}
-                  <div style={{ display: "flex", justifyContent: "center" }}>
-                    <button
-                      className={`notif-toggle ${notifPrefs[item.key].inapp ? "active" : ""}`}
-                      onClick={() => handleTogglePref(item.key, "inapp")}
-                      disabled={notifSaving}
-                      aria-label={`Toggle in-app ${item.label}`}
-                      id={`notif-toggle-inapp-${item.key}`}
-                      style={{
-                        width: 44,
-                        height: 24,
-                        borderRadius: 12,
-                        border: "1px solid var(--border-color)",
-                        background: notifPrefs[item.key].inapp
-                          ? "var(--accent-primary)"
-                          : "var(--bg-tertiary)",
-                        cursor: "pointer",
-                        position: "relative" as const,
-                        transition: "background 200ms, border-color 200ms",
-                        padding: 0,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 18,
-                          height: 18,
-                          borderRadius: "50%",
-                          background: "#fff",
-                          position: "absolute" as const,
-                          top: 2,
-                          left: notifPrefs[item.key].inapp ? 22 : 2,
-                          transition: "left 200ms cubic-bezier(0.4, 0, 0.2, 1)",
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
-                        }}
-                      />
-                    </button>
-                  </div>
-
-                  {/* Email Toggle */}
-                  <div style={{ display: "flex", justifyContent: "center" }}>
-                    <button
-                      className={`notif-toggle ${notifPrefs[item.key].email ? "active" : ""}`}
-                      onClick={() => handleTogglePref(item.key, "email")}
-                      disabled={notifSaving}
-                      aria-label={`Toggle email ${item.label}`}
-                      id={`notif-toggle-email-${item.key}`}
-                      style={{
-                        width: 44,
-                        height: 24,
-                        borderRadius: 12,
-                        border: "1px solid var(--border-color)",
-                        background: notifPrefs[item.key].email
-                          ? "var(--accent-primary)"
-                          : "var(--bg-tertiary)",
-                        cursor: "pointer",
-                        position: "relative" as const,
-                        transition: "background 200ms, border-color 200ms",
-                        padding: 0,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 18,
-                          height: 18,
-                          borderRadius: "50%",
-                          background: "#fff",
-                          position: "absolute" as const,
-                          top: 2,
-                          left: notifPrefs[item.key].email ? 22 : 2,
-                          transition: "left 200ms cubic-bezier(0.4, 0, 0.2, 1)",
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
-                        }}
-                      />
-                    </button>
-                  </div>
-                </div>
-              ))}
-
-              {/* Status message */}
-              {notifMsg && (
-                <div
-                  style={{
-                    padding: "0.75rem 1rem",
-                    fontSize: "0.8125rem",
-                    color: notifMsg.includes("saved") || notifMsg.includes("success")
-                      ? "var(--accent-success)"
-                      : "var(--accent-error)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                  }}
-                >
-                  {notifMsg.includes("saved") ? <Check size={14} /> : <AlertTriangle size={14} />}
-                  {notifMsg}
-                </div>
-              )}
-
-              {/* Helper text */}
-              <div
-                style={{
-                  padding: "1rem",
-                  fontSize: "0.75rem",
-                  color: "var(--text-tertiary)",
-                  borderTop: "1px solid var(--border-color)",
-                  lineHeight: 1.5,
-                }}
-              >
-                <strong>In-App</strong> notifications appear in the bell icon in the header.
-                <strong> Email</strong> notifications are sent to your account email when SMTP is configured.
-                Per-project notification settings can also be configured in project settings.
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── API Keys ── */}
-      {activeTab === "apikeys" && (
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-            <p className="text-muted" style={{ fontSize: "0.8125rem" }}>
-              API tokens are used to authenticate with the Sentry CLI and MCP server.
-            </p>
-            <button
-              className="btn btn-primary"
-              onClick={() => { setShowCreateToken(true); setCreatedToken(null); }}
-            >
-              <Plus size={16} />
-              Create Token
-            </button>
-          </div>
-
-          {tokensLoading ? (
-            <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
-              <Loader2 size={24} className="spin" style={{ color: "var(--text-tertiary)" }} />
-            </div>
-          ) : tokens.length === 0 ? (
-            <div className="card empty-state">
-              <Key size={48} className="empty-state-icon" />
-              <h3 style={{ marginBottom: "0.5rem" }}>No API tokens</h3>
-              <p className="text-muted">Create a token to integrate with Sentry CLI or MCP.</p>
-            </div>
-          ) : (
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Token</th>
-                    <th>Last Used</th>
-                    <th>Created</th>
-                    <th>Expires</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tokens.map((token) => (
-                    <tr key={token.id}>
-                      <td style={{ fontWeight: 500 }}>{token.name}</td>
-                      <td>
-                        <span className="text-mono" style={{ fontSize: "0.8125rem" }}>
-                          {token.token_prefix}••••••••
-                        </span>
-                      </td>
-                      <td className="text-muted">{formatDate(token.last_used_at)}</td>
-                      <td className="text-muted">{formatDate(token.created_at)}</td>
-                      <td className="text-muted">{formatDate(token.expires_at)}</td>
-                      <td>
-                        <button
-                          className="btn btn-ghost"
-                          style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", color: "var(--accent-error)" }}
-                          onClick={() => handleRevokeToken(token.id)}
-                        >
-                          <Trash2 size={14} />
-                          Revoke
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Create Token Modal */}
-      {showCreateToken && (
-        <div className="modal-overlay" onClick={() => { setShowCreateToken(false); setCreatedToken(null); }}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{createdToken ? "Token Created" : "Create API Token"}</h2>
-              <button
-                className="modal-close"
-                onClick={() => { setShowCreateToken(false); setCreatedToken(null); }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {createdToken ? (
-              <div>
-                <div className="token-warning">
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                    <AlertTriangle size={16} style={{ color: "var(--accent-warning)" }} />
-                    <strong style={{ fontSize: "0.875rem", color: "var(--accent-warning)" }}>
-                      Copy your token now
-                    </strong>
-                  </div>
-                  <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-                    This is the only time this token will be displayed. Store it securely.
-                  </p>
-                  <div className="token-display">
-                    <span style={{ flex: 1, wordBreak: "break-all" }}>
-                      {createdToken.raw_token}
-                    </span>
-                    <button
-                      className={`copy-btn ${tokenCopied ? "copied" : ""}`}
-                      onClick={copyToken}
-                    >
-                      {tokenCopied ? <Check size={14} /> : <Copy size={14} />}
-                      {tokenCopied ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                </div>
-                <div className="modal-actions">
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => { setShowCreateToken(false); setCreatedToken(null); }}
-                  >
-                    Done
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleCreateToken}>
-                {tokenError && (
-                  <div className="auth-error" style={{ marginBottom: "1rem" }}>
-                    {tokenError}
-                  </div>
-                )}
-                <div className="form-group" style={{ marginBottom: "1rem" }}>
-                  <label htmlFor="token-name" className="label">Token Name</label>
-                  <input
-                    id="token-name"
-                    className="input"
-                    placeholder="e.g. CI/CD Token"
-                    value={tokenName}
-                    onChange={(e) => setTokenName(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="token-expiry" className="label">
-                    Expires In (days) <span className="text-muted" style={{ fontWeight: 400 }}>— optional</span>
-                  </label>
-                  <input
-                    id="token-expiry"
-                    className="input"
-                    type="number"
-                    min={1}
-                    max={365}
-                    placeholder="Leave empty for no expiry"
-                    value={tokenExpiry}
-                    onChange={(e) => setTokenExpiry(e.target.value)}
-                  />
-                </div>
-                <div className="modal-actions">
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => setShowCreateToken(false)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={tokenCreating || !tokenName.trim()}
-                  >
-                    {tokenCreating ? "Creating..." : "Create Token"}
-                  </button>
-                </div>
-              </form>
-            )}
           </div>
         </div>
       )}
