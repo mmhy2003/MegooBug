@@ -28,7 +28,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import async_session_factory
 from app.models.user import User
-from app.services.auth import decode_token
+from app.services.auth import decode_token, token_version_matches
 from app.logging import get_logger
 
 logger = get_logger("api.websocket")
@@ -56,6 +56,8 @@ async def _authenticate_ws(websocket: WebSocket) -> User | None:
             )
             user = result.scalar_one_or_none()
             if user is None or not user.is_active:
+                return None
+            if not token_version_matches(payload, user):
                 return None
             return user
     except Exception as e:

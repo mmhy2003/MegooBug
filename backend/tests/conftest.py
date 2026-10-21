@@ -55,3 +55,61 @@ async def db(db_engine):
         finally:
             await session.close()
             await trans.rollback()
+
+
+# ── HTTP fixtures for user/auth endpoint tests ──────────────────────
+
+
+@pytest.fixture
+async def user_client(db):
+    """httpx client against the app, with get_db bound to the rollback session.
+
+    Named so it does not clash with the local `api_client` fixture in
+    test_ingest_pipeline.py.
+    """
+    from httpx import ASGITransport, AsyncClient
+    from app.database import get_db
+    from app.main import app
+
+    async def _get_test_db():
+        yield db
+
+    app.dependency_overrides[get_db] = _get_test_db
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.fixture
+def make_user(db):
+    """Factory that inserts a user with a known password."""
+    import uuid
+
+    from app.models.user import User, UserRole
+    from app.services.auth import hash_password
+
+    async def _make(password: str = "correct-horse-1", role: UserRole = UserRole.DEVELOPER) -> User:
+        user = User(
+            email=f"{uuid.uuid4().hex}@example.com",
+            name="Test User",
+            password_hash=hash_password(password),
+            role=role,
+        )
+        db.add(user)
+        await db.flush()
+        return user
+
+    return _make
+
+
+def cookie_header(access: str | None = None, refresh: str | None = None) -> dict:
+    """Explicit Cookie header, so the client's cookie jar never carries auth."""
+    parts = []
+    if access is not None:
+        parts.append(f"access_token={access}")
+    if refresh is not None:
+        parts.append(f"refresh_token={refresh}")
+    return {"Cookie": "; ".join(parts)}

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.api_token import ApiToken
-from app.services.auth import decode_token
+from app.services.auth import decode_token, token_version_matches
 from app.services.token import verify_api_token, is_token_expired
 from app.logging import get_logger
 
@@ -38,6 +38,10 @@ async def _get_user_from_cookie(
     )
     user = result.scalar_one_or_none()
     if user is None or not user.is_active:
+        return None
+
+    # Token issued before the last password change
+    if not token_version_matches(payload, user):
         return None
 
     return user
