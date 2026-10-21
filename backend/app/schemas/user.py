@@ -51,3 +51,39 @@ class RoleUpdate(BaseModel):
 class UserListResponse(BaseModel):
     users: list[UserResponse]
     total: int
+
+
+# ── Two-factor authentication ──
+
+
+class PasswordConfirm(BaseModel):
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class PasskeyInfo(BaseModel):
+    id: uuid.UUID
+    name: str
+    created_at: datetime
+    last_used_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class TwoFactorStatus(BaseModel):
+    enabled: bool
+    required: bool
+    methods: list[str]
+    totp_enabled_at: Optional[datetime] = None
+    passkeys: list[PasskeyInfo]
+
+
+class PasskeyRename(BaseModel):
+    name: str = Field(..., max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name cannot be empty")
+        return v
