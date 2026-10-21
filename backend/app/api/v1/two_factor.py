@@ -11,16 +11,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import MFA_PENDING_EXPIRED, MfaPendingUser
 from app.models.user import User
-from app.schemas.auth import PasskeyAssertionRequest, TotpCodeRequest
+from app.schemas.auth import (
+    PasskeyAssertionRequest,
+    PasskeyRegistrationRequest,
+    TotpCodeRequest,
+    TotpSetupResponse,
+)
 from app.schemas.user import UserResponse
 from app.services.auth import clear_mfa_pending, issue_auth_cookies
 from app.services.mfa import (
+    begin_totp_setup,
+    confirm_totp_setup,
     mfa_backoff_remaining,
     record_mfa_failure,
     reset_mfa_counters,
     verify_totp,
 )
-from app.services.passkeys import PasskeyError, authentication_options, finish_authentication
+from app.services.passkeys import (
+    PasskeyError,
+    authentication_options,
+    finish_authentication,
+    finish_registration,
+    registration_options,
+)
 
 router = APIRouter()
 
@@ -108,4 +121,64 @@ async def verify_login_passkey(
         finish_authentication(user, data.credential)
     except PasskeyError:
         return await failure_response(user, db, "Passkey verification failed")
+    return await complete_login(response, user, db)
+
+
+# ── Forced setup: an admin requires 2FA and the user has no method yet ──
+
+
+def _already_enrolled(user: User) -> JSONResponse | None:
+    if user.mfa_enrolled:
+        return _error(status.HTTP_409_CONFLICT, "Two-factor authentication is already set up")
+    return None
+
+
+@router.post("/setup/totp", response_model=TotpSetupResponse)
+async def setup_totp_begin(user: MfaPendingUser, db: AsyncSession = Depends(get_db)):
+    if (conflict := _already_enrolled(user)) is not None:
+        return conflict
+    secret, uri = begin_totp_setup(user)
+    await db.flush()
+    return TotpSetupResponse(secret=secret, otpauth_uri=uri)
+
+
+@router.post("/setup/totp/confirm", response_model=UserResponse)
+async def setup_totp_confirm(
+    data: TotpCodeRequest,
+    response: Response,
+    user: MfaPendingUser,
+    db: AsyncSession = Depends(get_db),
+):
+    if (conflict := _already_enrolled(user)) is not None:
+        return conflict
+    if (blocked := backoff_response(user)) is not None:
+        return blocked
+    if not confirm_totp_setup(user, data.code):
+        return await failure_response(user, db, "Incorrect code")
+    return await complete_login(response, user, db)
+
+
+@router.post("/setup/passkey/options")
+async def setup_passkey_options(user: MfaPendingUser, db: AsyncSession = Depends(get_db)):
+    if (conflict := _already_enrolled(user)) is not None:
+        return conflict
+    options = registration_options(user)
+    await db.flush()
+    return options
+
+
+@router.post("/setup/passkey", response_model=UserResponse)
+async def setup_passkey_finish(
+    data: PasskeyRegistrationRequest,
+    response: Response,
+    user: MfaPendingUser,
+    db: AsyncSession = Depends(get_db),
+):
+    if (conflict := _already_enrolled(user)) is not None:
+        return conflict
+    try:
+        finish_registration(user, data.credential, data.name)
+    except PasskeyError:
+        await db.flush()  # keep the consumed challenge cleared
+        return _error(status.HTTP_400_BAD_REQUEST, "Passkey setup failed")
     return await complete_login(response, user, db)

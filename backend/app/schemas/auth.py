@@ -42,3 +42,13 @@ class TotpCodeRequest(BaseModel):
 
 class PasskeyAssertionRequest(BaseModel):
     credential: dict
+
+
+class TotpSetupResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+
+class PasskeyRegistrationRequest(BaseModel):
+    credential: dict
+    name: str = Field("", max_length=100)

@@ -194,3 +194,69 @@ async def test_passkey_login_flow(user_client, make_user, db, monkeypatch):
     assert resp.status_code == 200, resp.text
     assert "access_token" in resp.cookies
     user_client.cookies.clear()
+
+
+# ── Forced setup (required by admin, nothing enrolled) ──
+
+
+async def _required_user(make_user, db):
+    user = await make_user()
+    user.mfa_required = True
+    await db.flush()
+    return user
+
+
+async def test_forced_setup_totp_then_session(user_client, make_user, db):
+    user = await _required_user(make_user, db)
+    _, cookies = await _login(user_client, user)
+
+    begin = await user_client.post("/api/v1/auth/2fa/setup/totp", headers=_pending(cookies))
+    assert begin.status_code == 200, begin.text
+    secret = begin.json()["secret"]
+    assert begin.json()["otpauth_uri"].startswith("otpauth://totp/")
+
+    resp = await user_client.post(
+        "/api/v1/auth/2fa/setup/totp/confirm",
+        json={"code": pyotp.TOTP(secret).now()},
+        headers=_pending(cookies),
+    )
+    assert resp.status_code == 200, resp.text
+    assert "access_token" in resp.cookies
+    user_client.cookies.clear()
+    await db.refresh(user)
+    assert user.totp_enabled_at is not None
+
+
+async def test_forced_setup_requires_pending_cookie(user_client):
+    resp = await user_client.post("/api/v1/auth/2fa/setup/totp")
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Your sign-in expired. Enter your password again."
+
+
+async def test_forced_setup_refused_when_enrolled(user_client, make_user, db):
+    user, _ = await _totp_user(make_user, db)
+    _, cookies = await _login(user_client, user)
+    resp = await user_client.post("/api/v1/auth/2fa/setup/totp", headers=_pending(cookies))
+    assert resp.status_code == 409
+
+
+async def test_forced_setup_passkey_then_session(user_client, make_user, db, monkeypatch):
+    user = await _required_user(make_user, db)
+    monkeypatch.setattr(
+        passkeys,
+        "verify_registration_response",
+        lambda **_: SimpleNamespace(credential_id=b"cid", credential_public_key=b"pk", sign_count=0),
+    )
+    _, cookies = await _login(user_client, user)
+
+    opts = await user_client.post("/api/v1/auth/2fa/setup/passkey/options", headers=_pending(cookies))
+    assert opts.status_code == 200
+    resp = await user_client.post(
+        "/api/v1/auth/2fa/setup/passkey",
+        json={"credential": {"id": "Y2lk"}, "name": "Laptop"},
+        headers=_pending(cookies),
+    )
+    assert resp.status_code == 200, resp.text
+    assert "access_token" in resp.cookies
+    user_client.cookies.clear()
+    assert len(user.webauthn_credentials) == 1
