@@ -7,6 +7,7 @@ from app.models.notification import Notification
 from app.models.invite import Invite
 from app.models.setting import Setting
 from app.models.api_token import ApiToken
+from app.models.webauthn_credential import WebAuthnCredential
 
 __all__ = [
     "User",
@@ -20,4 +21,5 @@ __all__ = [
     "Invite",
     "Setting",
     "ApiToken",
+    "WebAuthnCredential",
 ]

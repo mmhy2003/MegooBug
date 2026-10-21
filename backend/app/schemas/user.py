@@ -16,6 +16,8 @@ class UserResponse(BaseModel):
     avatar_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    mfa_required: bool = False
+    mfa_methods: list[str] = []
 
     model_config = {"from_attributes": True}
 
