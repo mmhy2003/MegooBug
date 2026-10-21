@@ -37,7 +37,8 @@ class UserUpdate(BaseModel):
 
 
 class PasswordUpdate(BaseModel):
-    current_password: str = Field(..., min_length=8)
+    # No length floor: a short wrong password should get "incorrect", not a 422
+    current_password: str = Field(..., min_length=1, max_length=128)
     new_password: str = Field(..., min_length=8, max_length=128)
 
 

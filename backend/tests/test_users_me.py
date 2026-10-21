@@ -157,3 +157,13 @@ async def test_api_token_survives_password_change(user_client, make_user, db):
         "/api/v1/users/me", headers={"Authorization": f"Bearer {raw}"}
     )
     assert resp.status_code == 200
+
+
+async def test_password_short_wrong_current_400(user_client, make_user):
+    """A mistyped current password shorter than 8 chars is just 'incorrect'."""
+    user = await make_user()
+    access, _ = await _login(user_client, user.email)
+
+    resp, _ = await _change_password(user_client, access, "abc", NEW_PASSWORD)
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Current password is incorrect"
