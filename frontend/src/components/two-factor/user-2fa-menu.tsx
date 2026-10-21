@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { menuPosition } from "@/lib/menu-position";
 import type { MfaMethod } from "@/lib/two-factor";
 
 export interface User2faFields {
@@ -11,6 +12,10 @@ export interface User2faFields {
   mfa_required: boolean;
   mfa_methods: MfaMethod[];
 }
+
+const MENU_WIDTH = 280;
+// Tallest state (reset confirmation); used to decide whether to open upward
+const MENU_HEIGHT = 190;
 
 /** The 2FA pill shown in the admin Users table. */
 export function TwoFactorBadge({ user }: { user: User2faFields }) {
@@ -37,7 +42,10 @@ export function User2faMenu<T extends User2faFields>({ user, onUpdated }: User2f
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Fixed position: the table wrapper scrolls (overflow), which would clip an absolute menu
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -46,9 +54,37 @@ export function User2faMenu<T extends User2faFields>({ user, onUpdated }: User2f
         setConfirmingReset(false);
       }
     }
-    if (open) document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    // A fixed menu would drift from its button on scroll/resize, so just close it
+    function close() {
+      setOpen(false);
+      setConfirmingReset(false);
+    }
+    if (open) {
+      document.addEventListener("mousedown", handleClick);
+      window.addEventListener("scroll", close, true);
+      window.addEventListener("resize", close);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
   }, [open]);
+
+  function toggle() {
+    if (!open && buttonRef.current) {
+      setPosition(
+        menuPosition(
+          buttonRef.current.getBoundingClientRect(),
+          { width: MENU_WIDTH, height: MENU_HEIGHT },
+          { width: window.innerWidth, height: window.innerHeight }
+        )
+      );
+    }
+    setOpen(!open);
+    setConfirmingReset(false);
+    setError("");
+  }
 
   async function run(request: () => Promise<T>) {
     setBusy(true);
@@ -65,26 +101,27 @@ export function User2faMenu<T extends User2faFields>({ user, onUpdated }: User2f
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <button
+        ref={buttonRef}
         className="btn btn-ghost"
         style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
         aria-expanded={open}
         aria-haspopup="menu"
-        onClick={() => { setOpen(!open); setConfirmingReset(false); setError(""); }}
+        onClick={toggle}
       >
         2FA {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
       </button>
 
-      {open && (
+      {open && position && (
         <div
           role="menu"
           aria-label={`2FA options for ${user.name}`}
           className="notification-dropdown"
           style={{
-            position: "absolute",
-            top: "calc(100% + 0.375rem)",
-            right: 0,
+            position: "fixed",
+            top: position.top,
+            left: position.left,
             zIndex: 100,
-            width: 280,
+            width: MENU_WIDTH,
             padding: "0.375rem",
             background: "var(--bg-card)",
             border: "1px solid var(--border-color)",
