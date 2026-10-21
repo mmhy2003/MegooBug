@@ -6,6 +6,7 @@ import { useCurrentUser } from "@/components/current-user-provider";
 import { NotificationPreferences } from "@/components/profile/notification-preferences";
 import { ApiKeys } from "@/components/profile/api-keys";
 import { AccountForms } from "@/components/profile/account-forms";
+import { SecuritySettings } from "@/components/profile/security-settings";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Admin",
@@ -15,6 +16,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 const TABS = [
   { key: "account", label: "Account", roles: ["admin", "developer", "viewer"] },
+  { key: "security", label: "Security", roles: ["admin", "developer", "viewer"] },
   { key: "notifications", label: "Notifications", roles: ["admin", "developer", "viewer"] },
   { key: "apikeys", label: "API Keys", roles: ["admin", "developer"] },
 ];
@@ -34,7 +36,7 @@ export default function ProfilePage() {
         <div>
           <h1 className="page-title">Profile</h1>
           <p className="text-muted" style={{ fontSize: "0.875rem", marginTop: "0.25rem" }}>
-            Manage your personal details, password, notifications and API keys.
+            Manage your personal details, password, security, notifications and API keys.
           </p>
         </div>
       </div>
@@ -120,6 +122,7 @@ function ProfileTabs({ role }: { role: string }) {
       </div>
 
       {activeTab === "account" && <AccountForms />}
+      {activeTab === "security" && <SecuritySettings />}
       {activeTab === "notifications" && <NotificationPreferences />}
       {activeTab === "apikeys" && <ApiKeys />}
     </>
