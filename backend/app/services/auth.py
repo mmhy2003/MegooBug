@@ -101,6 +101,44 @@ def issue_auth_cookies(response: Response, user: User) -> None:
     )
 
 
+MFA_PENDING_COOKIE = "mfa_pending"
+MFA_PENDING_PATH = "/api/v1/auth"
+MFA_PENDING_SECONDS = 300
+
+
+def issue_mfa_pending_cookie(response: Response, user: User) -> None:
+    """Password accepted, second step outstanding: a 5-minute single-purpose cookie.
+
+    Only the jti stored on the user is valid, so a newer login (or too many
+    failures, which clear it) invalidates any earlier pending credential.
+    """
+    jti = uuid.uuid4().hex
+    user.mfa_pending_jti = jti
+    user.mfa_pending_failures = 0
+    payload = {
+        "sub": str(user.id),
+        "type": "mfa_pending",
+        "tv": user.token_version,
+        "jti": jti,
+        "exp": datetime.now(timezone.utc) + timedelta(seconds=MFA_PENDING_SECONDS),
+    }
+    token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    response.set_cookie(
+        key=MFA_PENDING_COOKIE,
+        value=token,
+        httponly=True,
+        secure=settings.APP_URL.startswith("https://"),
+        samesite="lax",
+        max_age=MFA_PENDING_SECONDS,
+        path=MFA_PENDING_PATH,
+    )
+
+
+def clear_mfa_pending(response: Response, user: User) -> None:
+    user.mfa_pending_jti = None
+    response.delete_cookie(MFA_PENDING_COOKIE, path=MFA_PENDING_PATH)
+
+
 def create_invite_token() -> str:
     """Generate a secure random token for invitations."""
     return str(uuid.uuid4()) + "-" + str(uuid.uuid4())

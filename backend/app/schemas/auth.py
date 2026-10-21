@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -25,3 +27,18 @@ class TokenResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class MfaChallengeResponse(BaseModel):
+    """Login accepted the password; a second step (or forced setup) is next."""
+    mfa_required: Literal["verify", "setup"]
+    methods: list[str]
+    email: str
+
+
+class TotpCodeRequest(BaseModel):
+    code: str = Field(..., max_length=20)
+
+
+class PasskeyAssertionRequest(BaseModel):
+    credential: dict

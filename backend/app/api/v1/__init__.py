@@ -1,10 +1,11 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, users, invites, tokens, projects, issues, stats, notifications, teams
+from app.api.v1 import auth, two_factor, users, invites, tokens, projects, issues, stats, notifications, teams
 
 router = APIRouter(prefix="/api/v1")
 
 router.include_router(auth.router, prefix="/auth", tags=["Auth"])
+router.include_router(two_factor.router, prefix="/auth/2fa", tags=["Auth"])
 router.include_router(users.router, prefix="/users", tags=["Users"])
 router.include_router(invites.router, prefix="/invites", tags=["Invites"])
 router.include_router(tokens.router, prefix="/api-tokens", tags=["API Tokens"])
