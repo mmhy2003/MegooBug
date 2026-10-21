@@ -48,7 +48,11 @@ class ApiClient {
         // Retry the original request
         const retryResponse = await fetch(`${this.baseUrl}${path}`, config);
         if (!retryResponse.ok) {
-          throw new ApiError(retryResponse.status, await retryResponse.text());
+          const retryBody = await retryResponse.json().catch(() => ({}));
+          throw new ApiError(
+            retryResponse.status,
+            errorMessage(retryBody.detail, retryResponse.statusText)
+          );
         }
         return retryResponse.json();
       }
@@ -65,7 +69,7 @@ class ApiClient {
       const errorBody = await response.json().catch(() => ({}));
       throw new ApiError(
         response.status,
-        errorBody.detail || response.statusText
+        errorMessage(errorBody.detail, response.statusText)
       );
     }
 
@@ -95,6 +99,19 @@ class ApiClient {
   delete<T>(path: string, options?: FetchOptions) {
     return this.request<T>(path, { ...options, method: "DELETE" });
   }
+}
+
+/**
+ * Turn a FastAPI error `detail` into a readable message. Validation errors
+ * (422) carry a list of `{msg, ...}` entries instead of a string.
+ */
+function errorMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const msg = (detail[0] as { msg?: unknown })?.msg;
+    if (typeof msg === "string" && msg) return msg.replace(/^Value error, /, "");
+  }
+  return fallback;
 }
 
 export class ApiError extends Error {
