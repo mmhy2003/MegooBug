@@ -134,7 +134,11 @@ async def get_mfa_pending_user(
     if payload is None or payload.get("type") != "mfa_pending" or not payload.get("sub"):
         raise expired
 
-    result = await db.execute(select(User).where(User.id == uuid.UUID(payload["sub"])))
+    # Row lock: second-step requests for one user run one at a time, so
+    # attempt counters and TOTP replay checks can't be raced (lost updates).
+    result = await db.execute(
+        select(User).where(User.id == uuid.UUID(payload["sub"])).with_for_update()
+    )
     user = result.scalar_one_or_none()
     if (
         user is None
