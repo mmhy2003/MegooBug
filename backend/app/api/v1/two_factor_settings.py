@@ -8,15 +8,23 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import CurrentUser
+from app.dependencies import CurrentUser, require_admin
 from app.models.user import User
 from app.schemas.auth import PasskeyRegistrationRequest, TotpCodeRequest, TotpSetupResponse
-from app.schemas.user import PasskeyInfo, PasskeyRename, PasswordConfirm, TwoFactorStatus
+from app.schemas.user import (
+    PasskeyInfo,
+    PasskeyRename,
+    PasswordConfirm,
+    TwoFactorStatus,
+    UserResponse,
+)
 from app.services.auth import verify_password
-from app.services.mfa import begin_totp_setup, confirm_totp_setup, remove_totp
+from app.services.mfa import begin_totp_setup, clear_all_mfa, confirm_totp_setup, remove_totp
 from app.services.passkeys import PasskeyError, finish_registration, registration_options
 
 router = APIRouter()
@@ -144,3 +152,57 @@ async def remove_passkey(
     current_user.webauthn_credentials.remove(cred)
     await db.flush()
     return two_factor_status(current_user)
+
+
+# ── Admin: require / reset another user's 2FA ──
+
+
+class TwoFactorRequired(BaseModel):
+    required: bool
+
+
+async def _target_user(user_id: uuid.UUID, admin: User, db: AsyncSession, self_message: str) -> User:
+    if user_id == admin.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=self_message)
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return user
+
+
+@router.patch("/{user_id}/2fa-required", response_model=UserResponse)
+async def set_two_factor_required(
+    user_id: uuid.UUID,
+    data: TwoFactorRequired,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Require (or stop requiring) 2FA for a user.
+
+    Requiring it of someone with no method signs them out everywhere, so it
+    takes effect at once: sessions renew on refresh, so a "next login" might
+    otherwise never come.
+    """
+    user = await _target_user(user_id, admin, db, "You can't change your own 2FA requirement here.")
+    user.mfa_required = data.required
+    if data.required and not user.mfa_enrolled:
+        user.token_version += 1
+    await db.flush()
+    await db.refresh(user)
+    return user
+
+
+@router.post("/{user_id}/2fa/reset", response_model=UserResponse)
+async def reset_two_factor(
+    user_id: uuid.UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove all of a user's 2FA methods (lost device) and sign them out."""
+    user = await _target_user(user_id, admin, db, "You can't reset your own 2FA here.")
+    clear_all_mfa(user)
+    user.token_version += 1
+    await db.flush()
+    await db.refresh(user)
+    return user
